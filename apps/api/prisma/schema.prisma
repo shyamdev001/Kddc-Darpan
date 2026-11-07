@@ -1,0 +1,331 @@
+// KDCC Darpan data model (first version).
+// Conventions: all DateTime values are UTC. Schedules are evaluated in Asia/Kolkata.
+// Text is UTF-8 (Gujarati safe). Media display names are stored separately from storage keys.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  HO_ADMIN
+  REGION_MANAGER
+  BRANCH_VIEWER
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum MediaStatus {
+  UPLOADED // original stored, waiting for processing
+  PROCESSING // Sharp / FFmpeg job running
+  READY // processed file available for screens
+  FAILED
+}
+
+enum Orientation {
+  LANDSCAPE
+  PORTRAIT
+}
+
+enum ScreenStatus {
+  PENDING // registered, waiting to be paired
+  ONLINE
+  OFFLINE
+}
+
+enum AssignmentTarget {
+  SCREEN
+  BRANCH
+  TALUKA
+  REGION
+  ALL
+}
+
+enum CommandStatus {
+  PENDING
+  SENT
+  ACKED
+  FAILED
+}
+
+// ───────────────────────── Hierarchy ─────────────────────────
+
+model Region {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  talukas     Taluka[]
+  managers    User[]
+  assignments Assignment[]
+}
+
+model Taluka {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  regionId  String   @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  region      Region       @relation(fields: [regionId], references: [id])
+  branches    Branch[]
+  assignments Assignment[]
+
+  @@unique([regionId, name])
+}
+
+model Branch {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String?  @unique // bank's own branch code
+  name      String
+  address   String?
+  talukaId  String   @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  taluka      Taluka       @relation(fields: [talukaId], references: [id])
+  screens     Screen[]
+  viewers     User[]
+  assignments Assignment[]
+}
+
+model Screen {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String?
+  branchId    String?      @db.Uuid // null until paired
+  orientation Orientation  @default(LANDSCAPE)
+  status      ScreenStatus @default(PENDING)
+
+  // Pairing / auth
+  hardwareId      String    @unique
+  deviceTokenHash String    @unique // argon2 or sha256 of the token; never the raw token
+  pairingCode     String?   @unique // 6 digits while unpaired
+  pairingExpires  DateTime?
+  pairedAt        DateTime?
+
+  // Device info (updated by register + heartbeat)
+  model           String?
+  osVersion       String?
+  appVersion      String?
+  resolution      String?
+  storageFreeMb   Int?
+  storageTotalMb  Int?
+  ramFreeMb       Int?
+  ramTotalMb      Int?
+  currentMediaId  String?   @db.Uuid
+  manifestVersion String?
+  lastSeenAt      DateTime?
+  ipAddress       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branch       Branch?         @relation(fields: [branchId], references: [id])
+  currentMedia Media?          @relation("ScreenCurrentMedia", fields: [currentMediaId], references: [id], onDelete: SetNull)
+  assignments  Assignment[]
+  commands     DeviceCommand[]
+  playLogs     PlayLog[]
+
+  @@index([branchId])
+  @@index([status])
+}
+
+// ───────────────────────── Content ─────────────────────────
+
+model Media {
+  id           String      @id @default(uuid()) @db.Uuid
+  originalName String // exactly as uploaded (may be Gujarati)
+  displayName  String // clean name shown in dashboard
+  type         MediaType
+  status       MediaStatus @default(UPLOADED)
+  mimeType     String
+  sizeBytes    BigInt
+  sha256       String // of the processed file the TV downloads
+  storageKey   String      @unique // ASCII-safe key in the storage driver
+  originalKey  String? // original upload kept for re-processing
+  width        Int?
+  height       Int?
+  durationSec  Int? // videos: real length; images: null (use playlist default)
+  startDate    DateTime? // ad goes live
+  endDate      DateTime? // ad expiry
+  tags         String[]
+  errorMessage String?
+
+  uploadedById String?  @db.Uuid
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  uploadedBy     User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  playlistItems  PlaylistItem[]
+  playLogs       PlayLog[]
+  playingScreens Screen[]       @relation("ScreenCurrentMedia")
+
+  @@index([status])
+  @@index([endDate])
+}
+
+model Playlist {
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String
+  description        String?
+  defaultImageSec    Int      @default(10)
+  createdById        String?  @db.Uuid
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  createdBy   User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  items       PlaylistItem[]
+  assignments Assignment[]
+}
+
+model PlaylistItem {
+  id          String @id @default(uuid()) @db.Uuid
+  playlistId  String @db.Uuid
+  mediaId     String @db.Uuid
+  position    Int
+  durationSec Int? // override; null = media duration (video) or playlist default (image)
+
+  playlist Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  media    Media    @relation(fields: [mediaId], references: [id], onDelete: Restrict)
+
+  @@index([playlistId, position])
+}
+
+model Assignment {
+  id         String           @id @default(uuid()) @db.Uuid
+  playlistId String           @db.Uuid
+  targetType AssignmentTarget
+  screenId   String?          @db.Uuid
+  branchId   String?          @db.Uuid
+  talukaId   String?          @db.Uuid
+  regionId   String?          @db.Uuid
+  priority   Int              @default(0) // higher wins (screen > branch > taluka > region > all by default)
+  createdAt  DateTime         @default(now())
+
+  playlist  Playlist   @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  screen    Screen?    @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  branch    Branch?    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  taluka    Taluka?    @relation(fields: [talukaId], references: [id], onDelete: Cascade)
+  region    Region?    @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  schedules Schedule[]
+
+  @@index([screenId])
+  @@index([branchId])
+}
+
+// Dayparting for an assignment. No schedule rows = always on.
+model Schedule {
+  id           String    @id @default(uuid()) @db.Uuid
+  assignmentId String    @db.Uuid
+  daysOfWeek   Int[] // 0 = Sunday … 6 = Saturday (Asia/Kolkata)
+  startTime    String? // "HH:mm" local
+  endTime      String? // "HH:mm" local
+  startDate    DateTime?
+  endDate      DateTime?
+  screenOn     String? // "HH:mm" power on (Phase 2)
+  screenOff    String? // "HH:mm" power off (Phase 2)
+  brightness   Int? // 0–100 (Phase 2)
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────── Users & audit ─────────────────────────
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         UserRole  @default(BRANCH_VIEWER)
+  isActive     Boolean   @default(true)
+  totpSecret   String? // Phase 2 (encrypted)
+  totpEnabled  Boolean   @default(false)
+  lastLoginAt  DateTime?
+  regionId     String?   @db.Uuid // scope for REGION_MANAGER
+  branchId     String?   @db.Uuid // scope for BRANCH_VIEWER
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  region    Region?    @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  branch    Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  media     Media[]
+  playlists Playlist[]
+  auditLogs AuditLog[]
+  commands  DeviceCommand[]
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  action     String // e.g. "media.upload", "playlist.update", "screen.claim"
+  entityType String
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ───────────────────────── Devices ─────────────────────────
+
+model PlayLog {
+  id         BigInt   @id @default(autoincrement())
+  screenId   String   @db.Uuid
+  mediaId    String   @db.Uuid
+  startedAt  DateTime
+  durationMs Int
+  receivedAt DateTime @default(now())
+
+  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  media  Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@unique([screenId, mediaId, startedAt]) // de-duplicate re-sent batches
+  @@index([startedAt])
+}
+
+model DeviceCommand {
+  id          String        @id @default(uuid()) @db.Uuid
+  screenId    String        @db.Uuid
+  type        String // restart | reload | screenshot | clearCache | emergency:show | emergency:clear
+  params      Json?
+  status      CommandStatus @default(PENDING)
+  result      Json?
+  issuedById  String?       @db.Uuid
+  createdAt   DateTime      @default(now())
+  sentAt      DateTime?
+  completedAt DateTime?
+
+  screen   Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+  issuedBy User?  @relation(fields: [issuedById], references: [id], onDelete: SetNull)
+
+  @@index([screenId, status])
+}
+
+model AppRelease {
+  id          String   @id @default(uuid()) @db.Uuid
+  versionCode Int      @unique
+  versionName String
+  storageKey  String
+  sha256      String
+  sizeBytes   BigInt
+  notes       String?
+  isTestOnly  Boolean  @default(true) // roll out to test group first
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}

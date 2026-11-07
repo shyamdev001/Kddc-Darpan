@@ -1,0 +1,21 @@
+{
+  "name": "kdcc-darpan",
+  "private": true,
+  "description": "KDCC Darpan: in-house digital signage for KDCC Bank",
+  "workspaces": [
+    "packages/*",
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @darpan/api",
+    "dev:web": "npm run dev -w @darpan/web",
+    "build": "npm run build -w @darpan/shared && npm run build -w @darpan/api && npm run build -w @darpan/web",
+    "db:migrate": "npm run db:migrate -w @darpan/api",
+    "db:seed": "npm run db:seed -w @darpan/api",
+    "db:studio": "npm run db:studio -w @darpan/api"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

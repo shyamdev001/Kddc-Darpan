@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# Secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Local media / uploads
+media/
+uploads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Android (apps/tv)
+apps/tv/.gradle/
+apps/tv/build/
+apps/tv/app/build/
+apps/tv/local.properties
+*.apk
+*.keystore
+*.jks
+
+# Prisma generated client
+apps/api/src/generated/
