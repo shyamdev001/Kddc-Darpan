@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { BrandMark } from "@/components/brand";
-import { SidebarNav } from "./sidebar-nav";
+import { SidebarNav, SidebarNavFallback } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
 
 export default function DashboardLayout({ children }: LayoutProps<"/">) {
@@ -20,7 +20,9 @@ export default function DashboardLayout({ children }: LayoutProps<"/">) {
           </div>
         </div>
 
-        <SidebarNav />
+        <Suspense fallback={<SidebarNavFallback />}>
+          <SidebarNav />
+        </Suspense>
 
         <div className="mt-auto hidden border-t p-3 lg:block">
           <Suspense fallback={<div className="h-14 animate-pulse rounded-lg bg-muted" />}>

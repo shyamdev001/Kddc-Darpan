@@ -13,12 +13,19 @@ const items = [
 ] as const;
 
 export function SidebarNav() {
-  const pathname = usePathname();
+  return <NavLinks pathname={usePathname()} />;
+}
 
+/** Same links with nothing highlighted, shown until the URL is known. */
+export function SidebarNavFallback() {
+  return <NavLinks pathname={null} />;
+}
+
+function NavLinks({ pathname }: { pathname: string | null }) {
   return (
     <nav aria-label="Main" className="flex gap-1 overflow-x-auto px-3 pb-3 [scrollbar-width:none] lg:flex-col lg:px-3 lg:pt-2">
       {items.map(({ href, label, icon: Icon }) => {
-        const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+        const active = pathname !== null && (href === "/" ? pathname === "/" : pathname.startsWith(href));
         return (
           <Link
             key={href}

@@ -13,12 +13,17 @@ import { MediaQueueService } from './media-queue.service';
 import { IMAGE_EXTENSIONS, MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, VIDEO_EXTENSIONS } from './media.constants';
 import type { ListMediaQuery, UpdateMediaDto } from './media.dto';
 
-const mediaInclude = {
+export const mediaInclude = {
   uploadedBy: { select: { name: true } },
-  _count: { select: { playlistItems: true } },
+  playlistItems: { select: { playlistId: true } },
 } satisfies Prisma.MediaInclude;
 
 type MediaRow = Prisma.MediaGetPayload<{ include: typeof mediaInclude }>;
+
+/** Number of distinct playlists using this media (one playlist may repeat an item). */
+function playlistCount(m: MediaRow): number {
+  return new Set(m.playlistItems.map((i) => i.playlistId)).size;
+}
 
 const MB = 1024 * 1024;
 
@@ -48,7 +53,7 @@ export class MediaService {
       startDate: m.startDate?.toISOString() ?? null,
       endDate: m.endDate?.toISOString() ?? null,
       tags: m.tags,
-      usedInPlaylists: m._count.playlistItems,
+      usedInPlaylists: playlistCount(m),
       uploadedBy: m.uploadedBy?.name ?? null,
       createdAt: m.createdAt.toISOString(),
       updatedAt: m.updatedAt.toISOString(),
@@ -202,7 +207,7 @@ export class MediaService {
 
   async remove(id: string, user: AuthUser, ip?: string): Promise<void> {
     const media = await this.get(id);
-    const uses = media._count.playlistItems;
+    const uses = playlistCount(media);
     if (uses > 0) {
       throw new ConflictException(`Remove "${media.displayName}" from ${uses} playlist${uses === 1 ? '' : 's'} before deleting it.`);
     }

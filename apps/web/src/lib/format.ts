@@ -9,9 +9,32 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatDuration(sec: number): string {
-  const m = Math.floor(sec / 60);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** "4 min 30 s", "1 h 5 min", "45 s": for sentences, where 4:30 would be ambiguous. */
+export function formatLoop(sec: number): string {
+  if (sec < 60) return `${sec} s`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return m ? `${h} h ${m} min` : `${h} h`;
+  return s ? `${m} min ${s} s` : `${m} min`;
+}
+
+const relFmt = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+
+export function formatAgo(iso: string, now = Date.now()): string {
+  const diff = (Date.parse(iso) - now) / 1000;
+  const abs = Math.abs(diff);
+  if (abs < 60) return "just now";
+  if (abs < 3600) return relFmt.format(Math.round(diff / 60), "minute");
+  if (abs < 86_400) return relFmt.format(Math.round(diff / 3600), "hour");
+  if (abs < 7 * 86_400) return relFmt.format(Math.round(diff / 86_400), "day");
+  return formatDay(iso);
 }
 
 const dayFmt = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: IST });

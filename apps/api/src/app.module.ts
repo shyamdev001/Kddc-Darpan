@@ -5,6 +5,7 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health.controller';
 import { MediaModule } from './media/media.module';
+import { PlaylistsModule } from './playlists/playlists.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { StatsController } from './stats/stats.controller';
 import { StorageModule } from './storage/storage.module';
@@ -18,6 +19,7 @@ import { StorageModule } from './storage/storage.module';
     AuthModule,
     StorageModule,
     MediaModule,
+    PlaylistsModule,
   ],
   controllers: [HealthController, StatsController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
