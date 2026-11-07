@@ -29,10 +29,32 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlin.coroutines.resume
 
+/** What the screen is doing, for MainActivity. */
+enum class PlayState {
+    /** Showing content. */
+    PLAYING,
+
+    /** Nothing playable right now (no playlist, or files still downloading). */
+    NOTHING,
+
+    /** Outside display hours: black screen, nothing plays. */
+    OFF_HOURS,
+
+    /** Stopped (pairing, signed out). */
+    STOPPED,
+}
+
+/** One step of the loop: a verified file and how long it stays up. */
+private class Cue(val item: ManifestItem, val durationSec: Int)
+
+/** The playlist that applies right now and its playable steps. */
+private class Queue(val key: String, val cues: List<Cue>)
+
 /**
  * Plays the manifest in a loop: posters in two ImageViews that crossfade, videos in a single
- * ExoPlayer. Only files already verified in the cache are played; ads outside their dates are
- * skipped even when the TV is offline. Runs on the main thread.
+ * ExoPlayer. Picks the first playlist whose time slots match India time, goes dark outside
+ * display hours, and skips ads outside their dates, all without the network.
+ * Only files already verified in the cache are played. Runs on the main thread.
  */
 class Playback(
     private val context: Context,
@@ -41,7 +63,7 @@ class Playback(
     private val videoView: PlayerView,
     private val cache: MediaCache,
     private val scope: CoroutineScope,
-    private val onIdle: (Boolean) -> Unit,
+    private val onState: (PlayState) -> Unit,
 ) {
     /** What is on screen now; sent in the heartbeat. */
     @Volatile
@@ -51,6 +73,8 @@ class Playback(
     private var manifest: Manifest? = null
     private var loop: Job? = null
     private var position = -1
+    private var queueKey: String? = null
+    private var state: PlayState? = null
     private var front: ImageView = imageA
     private var back: ImageView = imageB
     private var exo: ExoPlayer? = null
@@ -81,7 +105,28 @@ class Playback(
         videoView.visibility = View.GONE
         imageA.setImageDrawable(null)
         imageB.setImageDrawable(null)
-        onIdle(false)
+        queueKey = null
+        setState(PlayState.STOPPED)
+    }
+
+    private fun setState(s: PlayState) {
+        if (state != s) {
+            state = s
+            onState(s)
+        }
+    }
+
+    /** Clears the screen to black (display hours ended). */
+    private fun blank() {
+        currentMediaId = null
+        preloaded = null
+        queueKey = null
+        exo?.stop()
+        videoView.visibility = View.GONE
+        imageA.animate().cancel()
+        imageB.animate().cancel()
+        imageA.setImageDrawable(null)
+        imageB.setImageDrawable(null)
     }
 
     fun release() {
@@ -91,10 +136,25 @@ class Playback(
         exo = null
     }
 
-    private fun playableNow(): List<ManifestItem> {
-        val m = manifest ?: return emptyList()
-        val now = System.currentTimeMillis()
-        return m.items.filter { inDateRange(it, now) && cache.has(it) }
+    private fun playable(item: ManifestItem?, now: Long): Boolean = item != null && inDateRange(item, now) && cache.has(item)
+
+    /**
+     * The first playlist whose slots match now and that has something ready to show. A timed
+     * playlist whose files are not downloaded yet falls through to the next one.
+     */
+    private fun queueNow(m: Manifest, now: Long): Queue? {
+        if (m.playlists.isEmpty()) {
+            // manifest from an older server: one list, in order
+            val cues = m.items.filter { playable(it, now) }.map { Cue(it, it.durationSec) }
+            return if (cues.isEmpty()) null else Queue("items", cues)
+        }
+        val byId = m.items.associateBy { it.mediaId }
+        for (p in m.playlists) {
+            if (!Schedule.slotsActive(p.slots, now)) continue
+            val cues = p.items.mapNotNull { e -> byId[e.mediaId]?.takeIf { playable(it, now) }?.let { Cue(it, e.durationSec) } }
+            if (cues.isNotEmpty()) return Queue(p.id, cues)
+        }
+        return null
     }
 
     private fun inDateRange(item: ManifestItem, now: Long): Boolean {
@@ -111,18 +171,40 @@ class Playback(
 
     private suspend fun run() {
         while (scope.isActive) {
-            val items = playableNow()
-            if (items.isEmpty()) {
+            val m = manifest
+            val now = System.currentTimeMillis()
+            if (m == null) {
+                delay(1_000)
+                continue
+            }
+            if (!Schedule.hoursOn(m.settings.hours, now)) {
+                if (state != PlayState.OFF_HOURS) {
+                    blank()
+                    setState(PlayState.OFF_HOURS)
+                }
+                delay(15_000) // checks again; turns back on within 15 s of the on time
+                continue
+            }
+            val queue = queueNow(m, now)
+            if (queue == null) {
                 currentMediaId = null
-                onIdle(true)
+                setState(PlayState.NOTHING)
                 delay(5_000) // new downloads or a new manifest are picked up on the next pass
                 continue
             }
-            onIdle(false)
-            position = (position + 1) % items.size
-            val item = items[position]
+            setState(PlayState.PLAYING)
+            if (queue.key != queueKey) {
+                // a different playlist took over (time slot started or ended): start it from the top
+                queueKey = queue.key
+                position = -1
+                preloaded = null
+            }
+            val cues = queue.cues
+            position = (position + 1) % cues.size
+            val cue = cues[position]
+            val item = cue.item
             val shown = try {
-                if (item.isVideo) playVideo(item) else showImage(item, items)
+                if (item.isVideo) playVideo(item, cue.durationSec) else showImage(cue, cues)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -133,7 +215,8 @@ class Playback(
         }
     }
 
-    private suspend fun showImage(item: ManifestItem, items: List<ManifestItem>): Boolean {
+    private suspend fun showImage(cue: Cue, cues: List<Cue>): Boolean {
+        val item = cue.item
         val started = SystemClock.elapsedRealtime()
         val ready = preloaded?.takeIf { it.first == item.sha256 }?.second
         preloaded = null
@@ -161,17 +244,17 @@ class Playback(
         outgoing.setImageDrawable(null)
 
         // Decode the next poster now, so it is ready the moment this one's time is up.
-        val next = items.getOrNull((position + 1) % items.size)
+        val next = cues.getOrNull((position + 1) % cues.size)?.item
         if (next != null && !next.isVideo && next.sha256 != item.sha256) {
             preloaded = withContext(Dispatchers.IO) { decode(cache.fileFor(next)) }?.let { next.sha256 to it }
         }
 
-        val remaining = item.durationSec * 1000L - (SystemClock.elapsedRealtime() - started)
+        val remaining = cue.durationSec * 1000L - (SystemClock.elapsedRealtime() - started)
         delay(remaining.coerceAtLeast(1_000))
         return true
     }
 
-    private suspend fun playVideo(item: ManifestItem): Boolean {
+    private suspend fun playVideo(item: ManifestItem, durationSec: Int): Boolean {
         val player = exo ?: ExoPlayer.Builder(context).build().also {
             exo = it
             videoView.player = it
@@ -183,7 +266,7 @@ class Playback(
         currentMediaId = item.mediaId
 
         // Play to the end, or stop at durationSec when the playlist trims the video.
-        val limitMs = item.durationSec * 1000L + 1_500
+        val limitMs = durationSec * 1000L + 1_500
         val result = withTimeoutOrNull(limitMs) {
             suspendCancellableCoroutine<Boolean> { cont ->
                 val listener = object : Player.Listener {

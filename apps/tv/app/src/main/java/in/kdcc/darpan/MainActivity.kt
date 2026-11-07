@@ -91,7 +91,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             findViewById<PlayerView>(R.id.video),
             cache,
             scope,
-        ) { idle -> idlePanel.visibility = if (idle) View.VISIBLE else View.GONE }
+        ) { state -> onPlayState(state) }
 
         findViewById<Button>(R.id.changeServer).setOnClickListener { showSetup(null) }
         connectButton.setOnClickListener { saveServer() }
@@ -276,6 +276,19 @@ class MainActivity : Activity(), DeviceLink.Listener {
         manifestVersion = m.version
         applyOrientation(m.settings.orientation == "PORTRAIT")
         playback.setManifest(m)
+    }
+
+    /**
+     * Outside display hours the screen is black and may sleep (the TV's own power saving can take
+     * over); during hours it is kept awake. The "nothing to play" panel shows only in hours.
+     */
+    private fun onPlayState(state: PlayState) {
+        idlePanel.visibility = if (state == PlayState.NOTHING) View.VISIBLE else View.GONE
+        if (state == PlayState.OFF_HOURS) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     /** Portrait-mounted TVs: lay the stage out tall and turn it a quarter turn. */

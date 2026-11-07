@@ -1,3 +1,4 @@
+import type { DisplayHoursValue, TimeSlot } from './schedule';
 // Dashboard view of screens (TVs). Device-side shapes live in device-protocol.ts.
 import type { Orientation } from './enums';
 
@@ -52,6 +53,10 @@ export interface ScreenDetail extends ScreenSummary {
   ownPlaylistId: string | null;
   /** what the screen plays when it has no playlist of its own (from branch, taluka, region or all) */
   fallbackPlaylist: ScreenPlaylistRef | null;
+  /** Timed playlists that can take over at certain times, most important first. */
+  scheduled: (ScreenPlaylistRef & { slots: TimeSlot[] })[];
+  /** When the screen is on, and which level set it; null = always on. */
+  hours: { hours: DisplayHoursValue; source: PlaylistSource } | null;
 }
 
 export interface ClaimScreenRequest {

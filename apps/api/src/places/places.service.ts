@@ -55,7 +55,7 @@ export class PlacesService {
         },
       }),
       this.prisma.assignment.findMany({
-        where: { targetType: { in: ['ALL', 'REGION', 'TALUKA', 'BRANCH'] } },
+        where: { targetType: { in: ['ALL', 'REGION', 'TALUKA', 'BRANCH'] }, schedules: { none: {} } }, // the always-on playlist; timed ones are on Schedules
         include: { playlist: { select: { id: true, name: true } } },
         orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
       }),
@@ -259,6 +259,7 @@ export class PlacesService {
         break;
     }
 
+    where = { ...where, schedules: { none: {} } }; // leave timed (scheduled) playlists alone
     const before = await this.prisma.assignment.findFirst({ where, orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }] });
     await this.prisma.$transaction(async (tx) => {
       await tx.assignment.deleteMany({ where });

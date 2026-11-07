@@ -44,18 +44,52 @@ data class ManifestItem(
     val isVideo: Boolean get() = type == "VIDEO"
 }
 
+/** When a timed playlist plays (India time). Empty days = every day; null = no limit. */
+@Serializable
+data class TimeSlot(
+    val days: List<Int> = emptyList(), // 0 = Sunday
+    val start: String? = null, // "HH:mm"
+    val end: String? = null,
+    val fromDate: String? = null, // "YYYY-MM-DD"
+    val toDate: String? = null,
+)
+
+/** When the screen is on. Outside these hours the TV shows black. */
+@Serializable
+data class DisplayHours(
+    val days: List<Int> = emptyList(),
+    val on: String,
+    val off: String,
+    val closedSaturdays: List<Int> = emptyList(), // e.g. 2nd and 4th
+)
+
+@Serializable
+data class PlaylistEntry(
+    val mediaId: String,
+    val durationSec: Int,
+)
+
+@Serializable
+data class ManifestPlaylist(
+    val id: String,
+    val name: String = "",
+    val slots: List<TimeSlot> = emptyList(), // empty = always
+    val items: List<PlaylistEntry> = emptyList(),
+)
+
 @Serializable
 data class ManifestSettings(
     val orientation: String? = null,
-    val brightness: Int? = null,
-    val screenOnTime: String? = null,
-    val screenOffTime: String? = null,
+    val hours: DisplayHours? = null,
 )
 
 @Serializable
 data class Manifest(
     val version: String,
     val generatedAt: String? = null,
+    /** Every file to download and keep. */
     val items: List<ManifestItem> = emptyList(),
+    /** Most important first: play the first one whose slots match now. */
+    val playlists: List<ManifestPlaylist> = emptyList(),
     val settings: ManifestSettings = ManifestSettings(),
 )

@@ -22,7 +22,7 @@ import type { ClaimScreenDto, RegisterDeviceDto, UpdateScreenDto } from './scree
 const screenInclude = {
   branch: { select: { id: true, name: true, code: true, talukaId: true, taluka: { select: { regionId: true } } } },
   currentMedia: { select: { id: true, displayName: true } },
-  assignments: { where: { targetType: 'SCREEN' }, select: { playlistId: true } },
+  assignments: { where: { targetType: 'SCREEN', schedules: { none: {} } }, select: { playlistId: true } },
 } satisfies Prisma.ScreenInclude;
 
 type ScreenRow = Prisma.ScreenGetPayload<{ include: typeof screenInclude }>;
@@ -143,11 +143,19 @@ export class ScreensService {
   async detail(id: string): Promise<ScreenDetail> {
     const s = await this.prisma.screen.findUnique({ where: { id }, include: screenInclude });
     if (!s || (s.status === 'PENDING' && s.name === null)) throw new NotFoundException('Screen not found');
-    const playlist = await this.resolver.resolve(s);
-    const fallback = playlist?.source === 'SCREEN' ? await this.resolver.resolve(s, true) : playlist;
+    const [playlist, layers, inherited, hours] = await Promise.all([
+      this.resolver.resolve(s),
+      this.resolver.layers(s),
+      this.resolver.layers(s, true),
+      this.resolver.hours(s),
+    ]);
+    // the always-on playlist from the levels above: what "follow its branch" means
+    const fallback = inherited.find((l) => !l.slots.length) ?? null;
     return {
       ...this.toSummary(s, playlist),
       fallbackPlaylist: fallback ? { id: fallback.playlistId, name: fallback.name, source: fallback.source } : null,
+      scheduled: layers.filter((l) => l.slots.length).map((l) => ({ id: l.playlistId, name: l.name, source: l.source, slots: l.slots })),
+      hours,
       osVersion: s.osVersion,
       resolution: s.resolution,
       ipAddress: s.ipAddress,
@@ -185,7 +193,7 @@ export class ScreensService {
         },
       });
       if (dto.playlistId !== undefined) {
-        await tx.assignment.deleteMany({ where: { screenId: screen.id, targetType: 'SCREEN' } });
+        await tx.assignment.deleteMany({ where: { screenId: screen.id, targetType: 'SCREEN', schedules: { none: {} } } });
         if (dto.playlistId) {
           await tx.assignment.create({ data: { playlistId: dto.playlistId, targetType: 'SCREEN', screenId: screen.id } });
         }
@@ -231,7 +239,7 @@ export class ScreensService {
     const before = await this.detail(id);
     if (playlistId) await this.assertPlaylist(playlistId);
     await this.prisma.$transaction(async (tx) => {
-      await tx.assignment.deleteMany({ where: { screenId: id, targetType: 'SCREEN' } });
+      await tx.assignment.deleteMany({ where: { screenId: id, targetType: 'SCREEN', schedules: { none: {} } } });
       if (playlistId) await tx.assignment.create({ data: { playlistId, targetType: 'SCREEN', screenId: id } });
     });
     await this.audit.log({

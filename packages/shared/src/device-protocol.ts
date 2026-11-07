@@ -1,3 +1,4 @@
+import type { DisplayHoursValue, TimeSlot } from './schedule';
 // Contract between the API and the Android TV app.
 // The Kotlin side mirrors these shapes with kotlinx.serialization.
 import type { MediaType } from './enums';
@@ -33,24 +34,39 @@ export interface ManifestItem {
   sha256: string;
   size: number;
   type: MediaType;
+  /** Default length; playlists may override it per item. */
   durationSec: number;
   /** ad start/end (ISO 8601 UTC); the TV skips the item outside this window, even offline */
   validFrom: string | null;
   validUntil: string | null;
 }
 
+/** One playlist the TV may play, with the times it plays. */
+export interface ManifestPlaylist {
+  id: string;
+  name: string;
+  /** Empty = always. */
+  slots: TimeSlot[];
+  /** Play order; each mediaId is in Manifest.items. */
+  items: { mediaId: string; durationSec: number }[];
+}
+
 export interface ManifestSettings {
-  orientation?: 'LANDSCAPE' | 'PORTRAIT';
-  brightness?: number;
-  screenOnTime?: string; // "HH:mm", Asia/Kolkata
-  screenOffTime?: string;
+  orientation: 'LANDSCAPE' | 'PORTRAIT';
+  /** When the screen is on (Asia/Kolkata). null = always on. */
+  hours: DisplayHoursValue | null;
 }
 
 export interface Manifest {
   version: string; // changes whenever content changes
   generatedAt: string; // ISO 8601 UTC
+  /** Every file the TV needs (download, verify, keep). */
   items: ManifestItem[];
-  schedule: unknown[]; // filled in Phase 2
+  /**
+   * Most important first. At any moment the TV plays the first playlist whose slots match the
+   * local time; a playlist with no slots always matches, so nothing after it is listed.
+   */
+  playlists: ManifestPlaylist[];
   settings: ManifestSettings;
 }
 

@@ -24,6 +24,7 @@ import { OrientationPicker } from "../orientation-picker";
 import { PairScreenButton } from "../pair-screen-dialog";
 import { ScreenGlyph, ScreenStatusText } from "../screen-glyph";
 import { SOURCE_TEXT } from "../screen-list";
+import { describeHours, describeSlot } from "../../schedules/format";
 
 const REFRESH_MS = 30_000;
 
@@ -186,7 +187,32 @@ function PlaylistCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: 
             {screen.playlist.source !== "SCREEN" && <span className="text-muted-foreground"> ({SOURCE_TEXT[screen.playlist.source]})</span>}.
           </p>
         ) : (
-          <p className="text-[15px] text-[#8a5a00]">No playlist yet, so the TV shows a blank screen. Choose one above.</p>
+          <p className="text-[15px] text-[#8a5a00]">
+            {screen.scheduled.length ? "Nothing is playing right now." : "No playlist yet, so the TV shows a blank screen. Choose one above."}
+          </p>
+        )}
+
+        {screen.scheduled.length > 0 && (
+          <div className="grid gap-1.5 rounded-lg bg-mist/60 px-3 py-2.5">
+            <p className="text-sm font-medium">At set times it plays instead</p>
+            <ul className="grid gap-1 text-sm">
+              {screen.scheduled.map((s) => (
+                <li key={`${s.source}-${s.id}-${s.slots.map(describeSlot).join()}`}>
+                  <Link href={`/playlists/${s.id}`} className="font-medium text-neel hover:underline">
+                    {s.name}
+                  </Link>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    {s.slots.map(describeSlot).join("; ")}
+                    {s.source !== "SCREEN" && ` (${SOURCE_TEXT[s.source]})`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <Link href="/schedules" className="text-sm text-muted-foreground hover:text-foreground">
+              Manage on Schedules
+            </Link>
+          </div>
         )}
         {error && <ErrorText>{error}</ErrorText>}
       </div>
@@ -271,6 +297,7 @@ function DeviceCard({ screen, ago }: { screen: ScreenDetail; ago: string | null 
 
   const facts: [string, string | null][] = [
     ["Last check-in", ago],
+    ["Screen on", screen.hours ? describeHours(screen.hours.hours) : "Always"],
     ["Model", screen.model],
     ["Android", screen.osVersion],
     ["App version", screen.appVersion],

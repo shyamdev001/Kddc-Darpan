@@ -4,3 +4,4 @@ export * from './media';
 export * from './playlist';
 export * from './screen';
 export * from './places';
+export * from './schedule';
