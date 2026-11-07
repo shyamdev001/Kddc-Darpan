@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KDCC Darpan</string>
+    <string name="brand_gu">દર્પણ</string>
+    <string name="pair_title">Pair this screen</string>
+    <string name="pair_hint">On the KDCC Darpan dashboard, open Screens, choose Pair a screen, and enter this code.</string>
+    <string name="pair_waiting">Getting a code…</string>
+    <string name="change_server">Change server</string>
+    <string name="setup_title">Connect to the Darpan server</string>
+    <string name="setup_hint">Type the address of the Darpan server, for example http://10.0.0.5:4000</string>
+    <string name="setup_connect">Connect</string>
+    <string name="idle_message">No content to show yet</string>
+</resources>

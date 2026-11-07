@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ink">#141936</color>
+    <color name="neel">#26337A</color>
+    <color name="neel_soft">#8C97D6</color>
+    <color name="haldi">#E0A526</color>
+    <color name="mist">#EEF0F7</color>
+    <color name="muted">#A9B0D0</color>
+</resources>

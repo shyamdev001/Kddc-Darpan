@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { mkdtemp, rm, stat } from 'fs/promises';
 import { join } from 'path';
+import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { STORAGE, type StorageDriver } from '../storage/storage.types';
 import { sha256File } from './file-utils';
@@ -15,6 +16,7 @@ export class MediaProcessingService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(STORAGE) private readonly storage: StorageDriver,
+    private readonly events: ContentEvents,
   ) {}
 
   async process(mediaId: string): Promise<void> {
@@ -54,6 +56,7 @@ export class MediaProcessingService {
           errorMessage: null,
         },
       });
+      this.events.contentChanged(); // a playlist may have been waiting for this file
       this.logger.log(`Processed ${media.type.toLowerCase()} ${mediaId} in ${((Date.now() - started) / 1000).toFixed(1)} s`);
     } catch (err) {
       const message = (err as Error).message.slice(0, 500);

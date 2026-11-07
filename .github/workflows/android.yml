@@ -1,0 +1,76 @@
+name: TV app (APK)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/tv/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/tv
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      # A fixed signing key lets each new APK install over the last one.
+      # Secrets: DARPAN_KEYSTORE_B64 (base64 of the .p12) and DARPAN_KEYSTORE_PASSWORD.
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.DARPAN_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/darpan-signing.p12"
+            echo "DARPAN_KEYSTORE_PATH=$RUNNER_TEMP/darpan-signing.p12" >> "$GITHUB_ENV"
+            echo "Signing with the KDCC Darpan key."
+          else
+            echo "::warning::DARPAN_KEYSTORE_B64 is not set. This APK uses a throwaway key and cannot update an installed copy."
+          fi
+
+      - name: Build debug APK
+        env:
+          DARPAN_KEYSTORE_PASSWORD: ${{ secrets.DARPAN_KEYSTORE_PASSWORD }}
+          DARPAN_SERVER_URL: ${{ vars.DARPAN_SERVER_URL }}
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+
+      # Turn Kotlin/Gradle errors into annotations, readable without opening the log.
+      - name: Report build errors
+        if: failure()
+        run: |
+          grep -E '^e: |error: |What went wrong|Could not resolve|> ' build.log | head -40 | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk kdcc-darpan.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kdcc-darpan-apk
+          path: apps/tv/kdcc-darpan.apk
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Darpan" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorAccent">@color/haldi</item>
+        <item name="android:colorPrimary">@color/neel</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>

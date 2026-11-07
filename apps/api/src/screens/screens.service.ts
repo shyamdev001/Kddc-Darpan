@@ -12,8 +12,10 @@ import {
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
 import { Prisma } from '../generated/prisma/client';
+import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { newDeviceToken, newPairingCode } from './device-auth';
+import { DevicesGateway } from './devices.gateway';
 import { PlaylistResolver, type ResolvedPlaylist } from './playlist-resolver.service';
 import type { ClaimScreenDto, RegisterDeviceDto, UpdateScreenDto } from './screen.dto';
 
@@ -37,6 +39,8 @@ export class ScreensService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly resolver: PlaylistResolver,
+    private readonly events: ContentEvents,
+    private readonly gateway: DevicesGateway,
   ) {}
 
   // ---------- TV side ----------
@@ -195,6 +199,7 @@ export class ScreensService {
       details: { name: dto.name, branchId: dto.branchId, playlistId: dto.playlistId ?? null, hardwareId: screen.hardwareId },
       ipAddress: ip,
     });
+    this.events.screensChanged(screen.id);
     return this.detail(screen.id);
   }
 
@@ -217,6 +222,7 @@ export class ScreensService {
       },
       ipAddress: ip,
     });
+    this.events.screensChanged(id);
     return after;
   }
 
@@ -236,7 +242,7 @@ export class ScreensService {
       details: { before: before.ownPlaylistId, after: playlistId },
       ipAddress: ip,
     });
-    // Next step: emit manifest:updated over Socket.IO so the TV refreshes at once.
+    this.events.screensChanged(id);
     return this.detail(id);
   }
 
@@ -244,6 +250,7 @@ export class ScreensService {
   async remove(id: string, user: AuthUser, ip?: string): Promise<void> {
     const s = await this.detail(id);
     await this.prisma.screen.delete({ where: { id } });
+    this.gateway.disconnectScreen(id);
     await this.audit.log({
       userId: user.id,
       action: 'screen.remove',

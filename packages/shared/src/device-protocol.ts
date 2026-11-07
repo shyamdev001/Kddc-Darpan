@@ -54,7 +54,7 @@ export interface Manifest {
   settings: ManifestSettings;
 }
 
-/** Socket.IO namespace `/devices` */
+/** Socket.IO namespace `/devices`. Connect with `auth: { token: deviceToken }`. */
 export const DEVICE_NAMESPACE = '/devices';
 
 export interface HeartbeatPayload {
@@ -62,6 +62,10 @@ export interface HeartbeatPayload {
   storageFreeBytes: number;
   ramFreeBytes: number;
   appVersion: string;
+  storageTotalBytes?: number;
+  ramTotalBytes?: number;
+  /** manifest version the TV is playing, so the dashboard can tell when it is up to date */
+  manifestVersion?: string;
 }
 
 export type DeviceCommandType =

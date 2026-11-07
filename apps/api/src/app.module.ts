@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { EventsModule } from './events/content-events';
 import { HealthController } from './health.controller';
 import { MediaModule } from './media/media.module';
 import { PlaylistsModule } from './playlists/playlists.module';
@@ -16,6 +17,7 @@ import { StorageModule } from './storage/storage.module';
     // Generous global limit; sensitive routes (login) set a tighter @Throttle.
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 300 }]),
     PrismaModule,
+    EventsModule,
     AuditModule,
     AuthModule,
     StorageModule,

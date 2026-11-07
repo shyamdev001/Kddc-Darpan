@@ -4,6 +4,7 @@ import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
 import type { Prisma } from '../generated/prisma/client';
 import { MediaService, mediaInclude } from '../media/media.service';
+import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreatePlaylistDto, UpdatePlaylistDto } from './playlist.dto';
 
@@ -33,6 +34,7 @@ export class PlaylistsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly media: MediaService,
+    private readonly events: ContentEvents,
   ) {}
 
   private summarise(p: PlaylistRow): Omit<PlaylistSummary, 'previews'> {
@@ -138,6 +140,7 @@ export class PlaylistsService {
       },
       ipAddress: ip,
     });
+    this.events.contentChanged();
     return this.toDetail(updated);
   }
 

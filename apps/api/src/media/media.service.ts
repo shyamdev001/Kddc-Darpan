@@ -6,6 +6,7 @@ import { extname } from 'path';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
 import type { Prisma } from '../generated/prisma/client';
+import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { STORAGE, type StorageDriver } from '../storage/storage.types';
 import { decodeUploadName, displayNameFrom, sha256File } from './file-utils';
@@ -34,6 +35,7 @@ export class MediaService {
     private readonly audit: AuditService,
     private readonly queue: MediaQueueService,
     @Inject(STORAGE) private readonly storage: StorageDriver,
+    private readonly events: ContentEvents,
   ) {}
 
   toItem(m: MediaRow): MediaItem {
@@ -189,6 +191,7 @@ export class MediaService {
       } as unknown as Prisma.InputJsonValue,
       ipAddress: ip,
     });
+    this.events.contentChanged(); // ad dates or name may change what screens play
     return this.toItem(media);
   }
 
