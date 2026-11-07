@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Req } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import type { AuthUser } from '../auth/auth.types';
 import { CurrentUser, Roles } from '../auth/decorators';
@@ -6,17 +7,22 @@ import {
   CreateBranchDto,
   CreateRegionDto,
   CreateTalukaDto,
+  ImportBranchesDto,
   SetPlacePlaylistDto,
   UpdateBranchDto,
   UpdateRegionDto,
   UpdateTalukaDto,
 } from './place.dto';
+import { BranchImportService } from './branch-import.service';
 import { PlacesService } from './places.service';
 
 /** Regions, talukas and branches, and the playlist set at each level. GET /branches (a flat list) lives in screens. */
 @Controller()
 export class PlacesController {
-  constructor(private readonly places: PlacesService) {}
+  constructor(
+    private readonly places: PlacesService,
+    private readonly importer: BranchImportService,
+  ) {}
 
   @Get('places')
   tree() {
@@ -27,6 +33,14 @@ export class PlacesController {
   @Roles('HO_ADMIN')
   setPlaylist(@Body() dto: SetPlacePlaylistDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     return this.places.setPlaylist(dto.level, dto.id, dto.playlistId, user, req.ip);
+  }
+
+  /** Many branches at once. dryRun=true only reports what would happen. */
+  @Post('places/import')
+  @Roles('HO_ADMIN')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  importBranches(@Body() dto: ImportBranchesDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    return this.importer.run(dto, user, req.ip);
   }
 
   @Post('regions')

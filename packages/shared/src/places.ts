@@ -69,3 +69,43 @@ export interface SetPlacePlaylistRequest {
   id?: string;
   playlistId: string | null;
 }
+
+// ---- Bulk branch import (pasted from Excel or a CSV file) ----
+
+export const IMPORT_MAX_ROWS = 1000;
+
+export interface ImportBranchRow {
+  /** Line in the pasted text or file, for messages. */
+  line: number;
+  region: string;
+  taluka: string;
+  name: string;
+  code?: string | null;
+  address?: string | null;
+}
+
+export interface ImportBranchesRequest {
+  rows: ImportBranchRow[];
+  /** true: only report what would happen. */
+  dryRun: boolean;
+}
+
+export type ImportRowStatus = 'create' | 'update' | 'same' | 'error';
+
+export interface ImportRowResult {
+  line: number;
+  status: ImportRowStatus;
+  /** What changes, or why the row was skipped. */
+  message: string;
+}
+
+export interface ImportBranchesResponse {
+  dryRun: boolean;
+  rows: ImportRowResult[];
+  newRegions: string[];
+  newTalukas: string[];
+  created: number;
+  updated: number;
+  unchanged: number;
+  errors: number;
+}

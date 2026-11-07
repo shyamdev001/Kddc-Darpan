@@ -1,6 +1,22 @@
-import { Transform } from 'class-transformer';
-import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
-import type { PlaceLevel } from '@darpan/shared';
+import { Transform, Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
+import { IMPORT_MAX_ROWS, type PlaceLevel } from '@darpan/shared';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').normalize('NFC') : value);
 /** Empty text means "no value". */
@@ -121,4 +137,47 @@ export class SetPlacePlaylistDto {
   @ValidateIf((_o, v) => v !== null)
   @IsUUID()
   playlistId!: string | null;
+}
+
+/** One pasted row. Kept loose on purpose: the import service checks each row and reports problems per line. */
+export class ImportBranchRowDto {
+  @IsInt()
+  @Min(1)
+  line!: number;
+
+  @IsString()
+  @MaxLength(500)
+  region!: string;
+
+  @IsString()
+  @MaxLength(500)
+  taluka!: string;
+
+  @IsString()
+  @MaxLength(500)
+  name!: string;
+
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  @MaxLength(500)
+  code?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsString()
+  @MaxLength(1000)
+  address?: string | null;
+}
+
+export class ImportBranchesDto {
+  @IsArray()
+  @ArrayMinSize(1, { message: 'There are no rows to import' })
+  @ArrayMaxSize(IMPORT_MAX_ROWS, { message: `Import at most ${IMPORT_MAX_ROWS} branches at a time` })
+  @ValidateNested({ each: true })
+  @Type(() => ImportBranchRowDto)
+  rows!: ImportBranchRowDto[];
+
+  @IsBoolean()
+  dryRun!: boolean;
 }

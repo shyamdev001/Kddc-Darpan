@@ -18,6 +18,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "../empty-state";
+import { ImportBranchesButton } from "./import-dialog";
 import { PlaceDialog, type PlaceEdit } from "./place-dialog";
 
 type Removal = { kind: "region" | "taluka" | "branch"; id: string; name: string };
@@ -118,10 +119,13 @@ export function PlaceTreeView() {
             className="h-10 bg-card pl-9"
           />
         </div>
-        <Button variant="outline" onClick={() => setEdit({ kind: "region" })} className="h-10 px-4">
-          <Plus data-icon="inline-start" />
-          Add region
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <ImportBranchesButton onImported={() => void load()} />
+          <Button variant="outline" onClick={() => setEdit({ kind: "region" })} className="h-10 px-4">
+            <Plus data-icon="inline-start" />
+            Add region
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -132,7 +136,7 @@ export function PlaceTreeView() {
 
       {tree.regions.length === 0 ? (
         <EmptyState icon={Building2} title="No regions yet">
-          Add a region, then its talukas and branches. Screens are paired to a branch.
+          Add a region, then its talukas and branches, or import the whole list from Excel. Screens are paired to a branch.
         </EmptyState>
       ) : visible!.regions.length === 0 ? (
         <p className="py-10 text-center text-muted-foreground">Nothing matches “{query}”.</p>
