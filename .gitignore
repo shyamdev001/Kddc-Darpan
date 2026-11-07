@@ -13,8 +13,8 @@ out/
 !.env.example
 
 # Local media / uploads
-media/
-uploads/
+/media/
+/uploads/
 
 # Logs
 *.log
