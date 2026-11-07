@@ -150,11 +150,20 @@ model Media {
   displayName  String // clean name shown in dashboard
   type         MediaType
   status       MediaStatus @default(UPLOADED)
-  mimeType     String
-  sizeBytes    BigInt
-  sha256       String // of the processed file the TV downloads
-  storageKey   String      @unique // ASCII-safe key in the storage driver
-  originalKey  String? // original upload kept for re-processing
+
+  // Original upload, kept for re-processing. Keys are ASCII-safe (never the user's file name).
+  originalKey       String @unique
+  originalSha256    String // used to detect the same file uploaded twice
+  originalSizeBytes BigInt
+  originalMimeType  String
+
+  // Processed file the TVs download. Null until processing finishes.
+  storageKey String?  @unique
+  mimeType   String?
+  sizeBytes  BigInt?
+  sha256     String? // TVs verify every download against this
+  thumbKey   String? // small WebP preview for the dashboard
+
   width        Int?
   height       Int?
   durationSec  Int? // videos: real length; images: null (use playlist default)
@@ -174,6 +183,7 @@ model Media {
 
   @@index([status])
   @@index([endDate])
+  @@index([originalSha256])
 }
 
 model Playlist {

@@ -4,8 +4,10 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health.controller';
+import { MediaModule } from './media/media.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { StatsController } from './stats/stats.controller';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { StatsController } from './stats/stats.controller';
     PrismaModule,
     AuditModule,
     AuthModule,
+    StorageModule,
+    MediaModule,
   ],
   controllers: [HealthController, StatsController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
