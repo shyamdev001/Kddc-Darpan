@@ -15,13 +15,15 @@ export interface RegisterDeviceResponse {
   deviceId: string;
   deviceToken: string; // shown once; server stores only a hash
   pairingCode: string; // 6 digits, displayed on the TV
+  pairingExpiresAt: string; // ISO 8601; GET /api/devices/status issues a fresh code after this
 }
 
-/** POST /api/screens/claim (dashboard) */
-export interface ClaimScreenRequest {
-  pairingCode: string;
-  name: string;
-  branchId: string;
+/** GET /api/devices/status (Bearer deviceToken). The TV polls this while showing the code. */
+export interface DeviceStatusResponse {
+  paired: boolean;
+  pairingCode: string | null;
+  pairingExpiresAt: string | null;
+  screenName: string | null;
 }
 
 /** GET /api/devices/manifest */
@@ -32,9 +34,13 @@ export interface ManifestItem {
   size: number;
   type: MediaType;
   durationSec: number;
+  /** ad start/end (ISO 8601 UTC); the TV skips the item outside this window, even offline */
+  validFrom: string | null;
+  validUntil: string | null;
 }
 
 export interface ManifestSettings {
+  orientation?: 'LANDSCAPE' | 'PORTRAIT';
   brightness?: number;
   screenOnTime?: string; // "HH:mm", Asia/Kolkata
   screenOffTime?: string;

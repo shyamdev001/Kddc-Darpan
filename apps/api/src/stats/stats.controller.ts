@@ -1,8 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
+import { ONLINE_WINDOW_MS } from '@darpan/shared';
 import { PrismaService } from '../prisma/prisma.service';
 
-/** A screen counts as online if it sent a heartbeat in the last 3 minutes (heartbeat is every 60 s). */
-const ONLINE_WINDOW_MS = 3 * 60_000;
 /** Ads ending within this many days show as "expiring soon". */
 const EXPIRY_WINDOW_DAYS = 7;
 
@@ -18,9 +17,9 @@ export class StatsController {
 
     const [screensTotal, screensOnline, screensUnpaired, branches, media, mediaExpiring, playlists, assignments] =
       await this.prisma.$transaction([
-        this.prisma.screen.count({ where: { branchId: { not: null } } }),
-        this.prisma.screen.count({ where: { branchId: { not: null }, lastSeenAt: { gte: onlineSince } } }),
-        this.prisma.screen.count({ where: { branchId: null } }),
+        this.prisma.screen.count({ where: { NOT: { status: 'PENDING', name: null } } }),
+        this.prisma.screen.count({ where: { status: { not: 'PENDING' }, lastSeenAt: { gte: onlineSince } } }),
+        this.prisma.screen.count({ where: { status: 'PENDING', name: null, pairingExpires: { gt: now } } }),
         this.prisma.branch.count(),
         this.prisma.media.count(),
         this.prisma.media.count({ where: { endDate: { gte: now, lte: expiryCutoff } } }),

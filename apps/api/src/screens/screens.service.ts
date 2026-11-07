@@ -1,0 +1,291 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ONLINE_WINDOW_MS,
+  PAIRING_CODE_TTL_MS,
+  type BranchOption,
+  type DeviceStatusResponse,
+  type RegisterDeviceResponse,
+  type ScreenDetail,
+  type ScreenListResponse,
+  type ScreenSummary,
+} from '@darpan/shared';
+import { AuditService } from '../audit/audit.service';
+import type { AuthUser } from '../auth/auth.types';
+import { Prisma } from '../generated/prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { newDeviceToken, newPairingCode } from './device-auth';
+import { PlaylistResolver, type ResolvedPlaylist } from './playlist-resolver.service';
+import type { ClaimScreenDto, RegisterDeviceDto, UpdateScreenDto } from './screen.dto';
+
+const screenInclude = {
+  branch: { select: { id: true, name: true, code: true, talukaId: true, taluka: { select: { regionId: true } } } },
+  currentMedia: { select: { id: true, displayName: true } },
+  assignments: { where: { targetType: 'SCREEN' }, select: { playlistId: true } },
+} satisfies Prisma.ScreenInclude;
+
+type ScreenRow = Prisma.ScreenGetPayload<{ include: typeof screenInclude }>;
+
+const BAD_CODE = 'That code is not valid or has expired. Check the 6-digit code on the TV and try again.';
+
+function isUniqueViolation(err: unknown, field: string): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002' && JSON.stringify(err.meta ?? {}).includes(field);
+}
+
+@Injectable()
+export class ScreensService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly resolver: PlaylistResolver,
+  ) {}
+
+  // ---------- TV side ----------
+
+  /**
+   * First boot of the TV app, or after its data was cleared. A TV that was already paired and
+   * registers again goes back to "needs pairing" (name, branch and playlist are kept), because
+   * its old token was lost with the app data.
+   */
+  async register(dto: RegisterDeviceDto, ip?: string): Promise<RegisterDeviceResponse> {
+    const existing = await this.prisma.screen.findUnique({
+      where: { hardwareId: dto.hardwareId },
+      select: { id: true, status: true, name: true },
+    });
+    const { token, hash } = newDeviceToken();
+    const info = {
+      model: dto.model,
+      osVersion: dto.osVersion,
+      resolution: dto.resolution,
+      appVersion: dto.appVersion ?? null,
+      ipAddress: ip ?? null,
+      lastSeenAt: new Date(),
+    };
+
+    const screen = await this.withFreshCode((code, expires) =>
+      existing
+        ? this.prisma.screen.update({
+            where: { id: existing.id },
+            data: { ...info, deviceTokenHash: hash, pairingCode: code, pairingExpires: expires, status: 'PENDING' },
+          })
+        : this.prisma.screen.create({
+            data: { ...info, hardwareId: dto.hardwareId, deviceTokenHash: hash, pairingCode: code, pairingExpires: expires },
+          }),
+    );
+
+    if (existing && existing.status !== 'PENDING') {
+      await this.audit.log({
+        userId: null,
+        action: 'screen.reregister',
+        entityType: 'Screen',
+        entityId: screen.id,
+        details: { name: existing.name },
+        ipAddress: ip,
+      });
+    }
+    return {
+      deviceId: screen.id,
+      deviceToken: token,
+      pairingCode: screen.pairingCode!,
+      pairingExpiresAt: screen.pairingExpires!.toISOString(),
+    };
+  }
+
+  /** Polled by the TV while it shows the code. Issues a fresh code once the old one expires. */
+  async deviceStatus(id: string): Promise<DeviceStatusResponse> {
+    let s = await this.prisma.screen.findUniqueOrThrow({ where: { id } });
+    if (s.status === 'PENDING' && (!s.pairingCode || !s.pairingExpires || s.pairingExpires.getTime() < Date.now())) {
+      s = await this.withFreshCode((code, expires) =>
+        this.prisma.screen.update({ where: { id }, data: { pairingCode: code, pairingExpires: expires } }),
+      );
+    }
+    const paired = s.status !== 'PENDING';
+    return {
+      paired,
+      pairingCode: paired ? null : s.pairingCode,
+      pairingExpiresAt: paired ? null : (s.pairingExpires?.toISOString() ?? null),
+      screenName: paired ? s.name : null,
+    };
+  }
+
+  /** Runs `write` with a new pairing code, retrying on the rare collision with a code in use. */
+  private async withFreshCode<T>(write: (code: string, expires: Date) => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await write(newPairingCode(), new Date(Date.now() + PAIRING_CODE_TTL_MS));
+      } catch (err) {
+        if (attempt < 5 && isUniqueViolation(err, 'pairingCode')) continue;
+        throw err;
+      }
+    }
+  }
+
+  // ---------- Dashboard side ----------
+
+  async list(): Promise<ScreenListResponse> {
+    const now = new Date();
+    const [rows, waitingToPair] = await Promise.all([
+      // Unnamed pending rows are TVs showing a code; they appear in the list once claimed.
+      this.prisma.screen.findMany({
+        where: { NOT: { status: 'PENDING', name: null } },
+        include: screenInclude,
+        orderBy: [{ name: 'asc' }],
+      }),
+      this.prisma.screen.count({ where: { status: 'PENDING', name: null, pairingExpires: { gt: now } } }),
+    ]);
+    const playlists = await this.resolver.resolveMany(rows);
+    return { items: rows.map((r) => this.toSummary(r, playlists.get(r.id) ?? null)), waitingToPair };
+  }
+
+  async detail(id: string): Promise<ScreenDetail> {
+    const s = await this.prisma.screen.findUnique({ where: { id }, include: screenInclude });
+    if (!s || (s.status === 'PENDING' && s.name === null)) throw new NotFoundException('Screen not found');
+    const playlist = await this.resolver.resolve(s);
+    const fallback = playlist?.source === 'SCREEN' ? await this.resolver.resolve(s, true) : playlist;
+    return {
+      ...this.toSummary(s, playlist),
+      fallbackPlaylist: fallback ? { id: fallback.playlistId, name: fallback.name, source: fallback.source } : null,
+      osVersion: s.osVersion,
+      resolution: s.resolution,
+      ipAddress: s.ipAddress,
+      storageFreeMb: s.storageFreeMb,
+      storageTotalMb: s.storageTotalMb,
+      ramFreeMb: s.ramFreeMb,
+      ramTotalMb: s.ramTotalMb,
+      manifestVersion: s.manifestVersion,
+      pairedAt: s.pairedAt?.toISOString() ?? null,
+      createdAt: s.createdAt.toISOString(),
+      ownPlaylistId: s.assignments[0]?.playlistId ?? null,
+    };
+  }
+
+  async claim(dto: ClaimScreenDto, user: AuthUser, ip?: string): Promise<ScreenDetail> {
+    const screen = await this.prisma.screen.findUnique({ where: { pairingCode: dto.pairingCode } });
+    if (!screen || screen.status !== 'PENDING' || !screen.pairingExpires || screen.pairingExpires < new Date()) {
+      await this.audit.log({ userId: user.id, action: 'screen.claim_failed', entityType: 'Screen', ipAddress: ip });
+      throw new BadRequestException(BAD_CODE);
+    }
+    await this.assertBranch(dto.branchId);
+    if (dto.playlistId) await this.assertPlaylist(dto.playlistId);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.screen.update({
+        where: { id: screen.id },
+        data: {
+          name: dto.name,
+          branchId: dto.branchId,
+          orientation: dto.orientation ?? screen.orientation,
+          status: 'ONLINE',
+          pairingCode: null,
+          pairingExpires: null,
+          pairedAt: new Date(),
+        },
+      });
+      if (dto.playlistId !== undefined) {
+        await tx.assignment.deleteMany({ where: { screenId: screen.id, targetType: 'SCREEN' } });
+        if (dto.playlistId) {
+          await tx.assignment.create({ data: { playlistId: dto.playlistId, targetType: 'SCREEN', screenId: screen.id } });
+        }
+      }
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: screen.name ? 'screen.repair' : 'screen.claim',
+      entityType: 'Screen',
+      entityId: screen.id,
+      details: { name: dto.name, branchId: dto.branchId, playlistId: dto.playlistId ?? null, hardwareId: screen.hardwareId },
+      ipAddress: ip,
+    });
+    return this.detail(screen.id);
+  }
+
+  async update(id: string, dto: UpdateScreenDto, user: AuthUser, ip?: string): Promise<ScreenDetail> {
+    const before = await this.detail(id);
+    if (dto.branchId) await this.assertBranch(dto.branchId);
+    await this.prisma.screen.update({
+      where: { id },
+      data: { name: dto.name, branchId: dto.branchId, orientation: dto.orientation },
+    });
+    const after = await this.detail(id);
+    await this.audit.log({
+      userId: user.id,
+      action: 'screen.update',
+      entityType: 'Screen',
+      entityId: id,
+      details: {
+        before: { name: before.name, branchId: before.branch?.id ?? null, orientation: before.orientation },
+        after: { name: after.name, branchId: after.branch?.id ?? null, orientation: after.orientation },
+      },
+      ipAddress: ip,
+    });
+    return after;
+  }
+
+  /** Sets, or clears with null, the playlist assigned directly to this screen. */
+  async setPlaylist(id: string, playlistId: string | null, user: AuthUser, ip?: string): Promise<ScreenDetail> {
+    const before = await this.detail(id);
+    if (playlistId) await this.assertPlaylist(playlistId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.assignment.deleteMany({ where: { screenId: id, targetType: 'SCREEN' } });
+      if (playlistId) await tx.assignment.create({ data: { playlistId, targetType: 'SCREEN', screenId: id } });
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: 'screen.assign_playlist',
+      entityType: 'Screen',
+      entityId: id,
+      details: { before: before.ownPlaylistId, after: playlistId },
+      ipAddress: ip,
+    });
+    // Next step: emit manifest:updated over Socket.IO so the TV refreshes at once.
+    return this.detail(id);
+  }
+
+  /** Forgets the TV. Its token stops working; the app registers again and shows a new code. */
+  async remove(id: string, user: AuthUser, ip?: string): Promise<void> {
+    const s = await this.detail(id);
+    await this.prisma.screen.delete({ where: { id } });
+    await this.audit.log({
+      userId: user.id,
+      action: 'screen.remove',
+      entityType: 'Screen',
+      entityId: id,
+      details: { name: s.name, branch: s.branch?.name ?? null, model: s.model },
+      ipAddress: ip,
+    });
+  }
+
+  async branches(): Promise<BranchOption[]> {
+    const rows = await this.prisma.branch.findMany({
+      include: { taluka: { select: { name: true, region: { select: { name: true } } } } },
+      orderBy: { name: 'asc' },
+    });
+    return rows.map((b) => ({ id: b.id, name: b.name, code: b.code, taluka: b.taluka.name, region: b.taluka.region.name }));
+  }
+
+  private async assertBranch(id: string) {
+    if (!(await this.prisma.branch.count({ where: { id } }))) throw new BadRequestException('That branch does not exist');
+  }
+
+  private async assertPlaylist(id: string) {
+    if (!(await this.prisma.playlist.count({ where: { id } }))) {
+      throw new BadRequestException('That playlist does not exist. Reload and try again.');
+    }
+  }
+
+  private toSummary(s: ScreenRow, playlist: ResolvedPlaylist | null): ScreenSummary {
+    const paired = s.status !== 'PENDING';
+    return {
+      id: s.id,
+      name: s.name ?? 'Unnamed screen',
+      paired,
+      online: paired && s.lastSeenAt !== null && Date.now() - s.lastSeenAt.getTime() < ONLINE_WINDOW_MS,
+      lastSeenAt: s.lastSeenAt?.toISOString() ?? null,
+      orientation: s.orientation,
+      branch: s.branch ? { id: s.branch.id, name: s.branch.name, code: s.branch.code } : null,
+      playlist: playlist ? { id: playlist.playlistId, name: playlist.name, source: playlist.source } : null,
+      model: s.model,
+      appVersion: s.appVersion,
+      nowPlaying: s.currentMedia,
+    };
+  }
+}
