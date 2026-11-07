@@ -37,3 +37,7 @@ apps/tv/local.properties
 
 # Prisma generated client
 apps/api/src/generated/
+
+# Internal bank documents and private context (repo is public)
+/docs/
+CLAUDE.local.md
