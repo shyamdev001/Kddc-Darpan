@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Images, LayoutGrid, ListVideo, MonitorPlay } from "lucide-react";
+import { Building2, Images, LayoutGrid, ListVideo, MonitorPlay } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -10,6 +10,7 @@ const items = [
   { href: "/screens", label: "Screens", icon: MonitorPlay },
   { href: "/media", label: "Media", icon: Images },
   { href: "/playlists", label: "Playlists", icon: ListVideo },
+  { href: "/branches", label: "Branches", icon: Building2 },
 ] as const;
 
 export function SidebarNav() {

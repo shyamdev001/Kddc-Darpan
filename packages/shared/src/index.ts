@@ -3,3 +3,4 @@ export * from './device-protocol';
 export * from './media';
 export * from './playlist';
 export * from './screen';
+export * from './places';

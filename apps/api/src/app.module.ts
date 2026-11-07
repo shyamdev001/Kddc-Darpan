@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { EventsModule } from './events/content-events';
 import { HealthController } from './health.controller';
 import { MediaModule } from './media/media.module';
+import { PlacesModule } from './places/places.module';
 import { PlaylistsModule } from './playlists/playlists.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ScreensModule } from './screens/screens.module';
@@ -24,6 +25,7 @@ import { StorageModule } from './storage/storage.module';
     MediaModule,
     PlaylistsModule,
     ScreensModule,
+    PlacesModule,
   ],
   controllers: [HealthController, StatsController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -15,6 +15,13 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   if (hasSession && isLogin) {
+    // The dashboard sends people here with ?expired=1 when the API rejected their session.
+    // The cookie is stale then: drop it and show sign-in, or the two pages bounce forever.
+    if (request.nextUrl.searchParams.has("expired")) {
+      const res = NextResponse.next();
+      res.cookies.delete(SESSION_COOKIE);
+      return res;
+    }
     return NextResponse.redirect(new URL("/", request.url));
   }
   return NextResponse.next();
