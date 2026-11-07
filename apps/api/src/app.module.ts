@@ -5,6 +5,7 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health.controller';
 import { PrismaModule } from './prisma/prisma.module';
+import { StatsController } from './stats/stats.controller';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { PrismaModule } from './prisma/prisma.module';
     AuditModule,
     AuthModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, StatsController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

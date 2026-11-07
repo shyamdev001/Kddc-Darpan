@@ -16,19 +16,24 @@ export interface SessionUser {
 }
 
 /**
- * Asks the API who is logged in, forwarding the browser's session cookie.
- * Returns null when there is no valid session. Reads cookies, so callers
- * must render inside <Suspense>.
+ * Calls the API from the server, forwarding the browser's session cookie.
+ * Returns null on 401 so callers can send the user to /login.
+ * Reads cookies, so callers must render inside <Suspense>.
  */
-export async function getSessionUser(): Promise<SessionUser | null> {
+export async function apiGet<T>(path: string): Promise<T | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
-  const res = await fetch(`${API_URL}/api/auth/me`, {
+  const res = await fetch(`${API_URL}/api${path}`, {
     headers: { cookie: `${SESSION_COOKIE}=${token}` },
     cache: "no-store",
   });
-  if (!res.ok) return null;
-  const body = (await res.json()) as { user: SessionUser };
-  return body.user;
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`API ${path} failed with ${res.status}`);
+  return (await res.json()) as T;
+}
+
+export async function getSessionUser(): Promise<SessionUser | null> {
+  const body = await apiGet<{ user: SessionUser }>("/auth/me");
+  return body?.user ?? null;
 }

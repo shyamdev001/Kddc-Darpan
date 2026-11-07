@@ -2,24 +2,42 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function LogoutButton() {
+export function LogoutButton({ iconOnly = false }: { iconOnly?: boolean }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
-  async function logout() {
+  async function signOut() {
     setPending(true);
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     router.replace("/login");
     router.refresh();
   }
 
+  const Icon = pending ? Loader2 : LogOut;
+
+  if (iconOnly) {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={signOut}
+        disabled={pending}
+        aria-label="Sign out"
+        title="Sign out"
+        className="text-muted-foreground hover:text-foreground"
+      >
+        <Icon className={pending ? "animate-spin" : undefined} />
+      </Button>
+    );
+  }
+
   return (
-    <Button variant="outline" size="sm" onClick={logout} disabled={pending}>
-      <LogOut data-icon="inline-start" />
-      {pending ? "Signing out…" : "Sign out"}
+    <Button variant="outline" onClick={signOut} disabled={pending}>
+      <Icon className={pending ? "animate-spin" : undefined} data-icon="inline-start" />
+      Sign out
     </Button>
   );
 }
