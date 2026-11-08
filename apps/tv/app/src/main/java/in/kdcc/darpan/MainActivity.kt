@@ -33,6 +33,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * The only screen. States: setup (server address) -> pairing (shows code) -> live (plays content).
@@ -277,6 +280,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     private fun applyManifest(m: Manifest) {
+        // The server's clock, even from a saved manifest, beats a TV clock reset by a power cut.
+        m.generatedAt?.let { parseIso(it) }?.let { TrustedClock.serverTime(it) }
         manifestVersion = m.version
         applyOrientation(m.settings.orientation == "PORTRAIT")
         playback.setManifest(m)
@@ -418,6 +423,12 @@ class MainActivity : Activity(), DeviceLink.Listener {
             setupPanel.visibility = View.GONE
             begin()
         }
+    }
+
+    private fun parseIso(s: String): Long? = try {
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.parse(s)?.time
+    } catch (e: Exception) {
+        null
     }
 
     private fun normalizeUrl(input: String): String? {

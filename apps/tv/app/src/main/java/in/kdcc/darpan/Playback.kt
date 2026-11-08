@@ -190,7 +190,7 @@ class Playback(
     private suspend fun run() {
         while (scope.isActive) {
             val m = manifest
-            val now = System.currentTimeMillis()
+            val now = TrustedClock.now()
             if (m == null) {
                 delay(1_000)
                 continue

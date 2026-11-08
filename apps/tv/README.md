@@ -11,6 +11,8 @@ There is no Android Studio on the dev machine: GitHub Actions builds the APK
 4. Keeps a live Socket.IO link: changes on the dashboard arrive in about 2 seconds, with a heartbeat every 60 s.
    Every 10 minutes it also re-checks the manifest, in case a push was missed.
 5. With no network it keeps playing the last content it had, and ads still stop on their end date.
+   TVs without a clock battery wake from a power cut at a factory date; `TrustedClock` never lets the time
+   fall behind the last server time it saw, so dated ads keep playing until the network sets the real clock.
 6. Schedules run on the TV itself, in India time: it switches to a timed playlist when its slot starts and back
    when it ends, and shows a black screen outside display hours (letting the TV's own power saving take over).
    This keeps working offline. Schedule rules live in `Schedule.kt` and must match `packages/shared/src/schedule.ts`.
