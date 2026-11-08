@@ -3,6 +3,8 @@ package `in`.kdcc.darpan
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
 import android.util.DisplayMetrics
@@ -128,9 +130,19 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        // Menu/Settings on the remote opens server setup, but only before the TV is paired.
-        if ((keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS) && pairPanel.visibility == View.VISIBLE) {
-            showSetup(null)
+        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS) {
+            if (pairPanel.visibility == View.VISIBLE) {
+                // Before pairing: server setup.
+                showSetup(null)
+            } else if (setupPanel.visibility != View.VISIBLE) {
+                // While live: the TV's own settings (Wi-Fi, home app). With Darpan as the home app,
+                // this is the way out to the rest of the TV until kiosk mode locks it down.
+                try {
+                    startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (e: Exception) {
+                    Log.w(TAG, "No settings screen on this TV", e)
+                }
+            }
             return true
         }
         return super.onKeyDown(keyCode, event)

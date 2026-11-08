@@ -36,7 +36,12 @@ Or copy the APK to a USB stick and open it with the TV's file manager (allow unk
 
 ## On the TV remote
 - While the pairing code is shown: **Change server** button (or the Menu key) opens the server address screen.
-- Back is ignored while content is playing.
+- Back is ignored while content is playing. Menu while playing opens the TV's own Settings.
+
+## Start on power-on
+Android 10+ does not let apps open themselves at boot. Make KDCC Darpan the TV's home app: press Home,
+pick KDCC Darpan and choose Always (or Settings > Apps > Default apps > Home app). It then opens at
+every power-on and Home returns to it. Kiosk mode (Device Owner) will lock this in Phase 2.
 
 ## Not yet (Phase 2)
 Kiosk / Device Owner mode, reliable auto-start on Android 10+, OTA updates, play logs, brightness,
