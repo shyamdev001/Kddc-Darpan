@@ -64,6 +64,8 @@ class Playback(
     private val cache: MediaCache,
     private val scope: CoroutineScope,
     private val onState: (PlayState) -> Unit,
+    /** While nothing plays: a short plain-English reason, refreshed every few seconds. */
+    private val onIdleReason: (String) -> Unit,
 ) {
     /** What is on screen now; sent in the heartbeat. */
     @Volatile
@@ -157,6 +159,22 @@ class Playback(
         return null
     }
 
+    /** Why queueNow found nothing, for the idle screen. */
+    private fun idleReason(m: Manifest, now: Long): String {
+        val files = m.items.distinctBy { it.sha256 }
+        val ready = files.count { cache.has(it) }
+        val inDates = m.items.count { inDateRange(it, now) }
+        val why = when {
+            m.items.isEmpty() -> "No playlist is assigned to this screen."
+            ready == 0 -> "Files not downloaded yet (0 of ${files.size})."
+            inDates == 0 -> "Every ad is outside its start/end dates."
+            m.playlists.isNotEmpty() && m.playlists.none { Schedule.slotsActive(it.slots, now) } -> "No playlist is set for this time."
+            else -> "Nothing ready to play in the current playlist."
+        }
+        val clock = SimpleDateFormat("d MMM yyyy, h:mm a", Locale.US).apply { timeZone = TimeZone.getTimeZone("Asia/Kolkata") }.format(now)
+        return "$why\nFiles ready: $ready of ${files.size} · Playlists: ${m.playlists.size} · TV clock: $clock IST · v${BuildConfig.VERSION_NAME}"
+    }
+
     private fun inDateRange(item: ManifestItem, now: Long): Boolean {
         val from = item.validFrom?.let { parseTime(it) }
         val until = item.validUntil?.let { parseTime(it) }
@@ -189,6 +207,7 @@ class Playback(
             if (queue == null) {
                 currentMediaId = null
                 setState(PlayState.NOTHING)
+                onIdleReason(idleReason(m, now))
                 delay(5_000) // new downloads or a new manifest are picked up on the next pass
                 continue
             }

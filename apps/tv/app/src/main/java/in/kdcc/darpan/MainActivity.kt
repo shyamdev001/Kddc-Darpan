@@ -51,6 +51,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var root: FrameLayout
     private lateinit var stage: FrameLayout
     private lateinit var idlePanel: View
+    private lateinit var idleDetail: TextView
     private lateinit var pairPanel: View
     private lateinit var pairCode: TextView
     private lateinit var pairStatus: TextView
@@ -72,6 +73,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         root = findViewById(R.id.root)
         stage = findViewById(R.id.stage)
         idlePanel = findViewById(R.id.idlePanel)
+        idleDetail = findViewById(R.id.idleDetail)
         pairPanel = findViewById(R.id.pairPanel)
         pairCode = findViewById(R.id.pairCode)
         pairStatus = findViewById(R.id.pairStatus)
@@ -91,7 +93,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
             findViewById<PlayerView>(R.id.video),
             cache,
             scope,
-        ) { state -> onPlayState(state) }
+            onState = { state -> onPlayState(state) },
+            onIdleReason = { reason -> idleDetail.text = reason },
+        )
 
         findViewById<Button>(R.id.changeServer).setOnClickListener { showSetup(null) }
         connectButton.setOnClickListener { saveServer() }
