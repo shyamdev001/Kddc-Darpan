@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { UserRole } from "@darpan/shared";
-import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay, PackageCheck, UsersRound } from "lucide-react";
+import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay, PackageCheck, ScrollText, UsersRound } from "lucide-react";
 import { canOpen } from "@/components/session-context";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,7 @@ const items = [
   { href: "/alerts", label: "Alerts", icon: BellRing },
   { href: "/updates", label: "App updates", icon: PackageCheck },
   { href: "/users", label: "Users", icon: UsersRound },
+  { href: "/activity", label: "Activity", icon: ScrollText },
 ] as const;
 
 export function SidebarNav({ role }: { role: UserRole }) {

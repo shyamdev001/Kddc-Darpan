@@ -9,3 +9,4 @@ export * from './alerts';
 export * from './reports';
 export * from './releases';
 export * from './users';
+export * from './activity';
