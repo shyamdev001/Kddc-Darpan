@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AlertsModule } from './alerts/alerts.module';
 import { ReleasesModule } from './releases/releases.module';
+import { UsersModule } from './users/users.module';
 import { ReportsModule } from './reports/reports.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
@@ -36,6 +37,7 @@ import { StorageModule } from './storage/storage.module';
     AlertsModule,
     ReportsModule,
     ReleasesModule,
+    UsersModule,
   ],
   controllers: [HealthController, StatsController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { AuditService } from '../audit/audit.service';
@@ -55,6 +55,23 @@ export class AuthService {
         branchId: user.branchId,
       },
     };
+  }
+
+  /** Returns a fresh session token: the change signs out every other session. */
+  async changePassword(user: AuthUser, currentPassword: string, newPassword: string, ip?: string): Promise<string> {
+    const row = await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { passwordHash: true } });
+    if (!(await argon2.verify(row.passwordHash, currentPassword).catch(() => false))) {
+      await this.audit.log({ userId: user.id, action: 'auth.password_change_failed', entityType: 'User', entityId: user.id, ipAddress: ip });
+      throw new BadRequestException('Your current password is not right');
+    }
+    if (currentPassword === newPassword) throw new BadRequestException('Choose a new password, not the current one');
+    const passwordHash = await argon2.hash(newPassword, { type: argon2.argon2id });
+    // Whole seconds, like the token's issue time, so the new session is not refused.
+    const passwordChangedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
+    await this.prisma.user.update({ where: { id: user.id }, data: { passwordHash, passwordChangedAt } });
+    await this.audit.log({ userId: user.id, action: 'auth.password_change', entityType: 'User', entityId: user.id, ipAddress: ip });
+    const payload: SessionPayload = { sub: user.id, role: user.role };
+    return this.jwt.signAsync(payload);
   }
 
   async logout(user: AuthUser, ip?: string): Promise<void> {

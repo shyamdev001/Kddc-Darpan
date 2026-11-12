@@ -46,11 +46,16 @@ export class AuthGuard implements CanActivate {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, name: true, role: true, isActive: true, regionId: true, branchId: true },
+      select: { id: true, email: true, name: true, role: true, isActive: true, regionId: true, branchId: true, passwordChangedAt: true },
     });
     if (!user || !user.isActive) throw new UnauthorizedException('Account disabled');
+    // A password change or reset signs out every session issued before it.
+    const issued = (payload as SessionPayload & { iat?: number }).iat ?? 0;
+    if (user.passwordChangedAt && issued * 1000 < user.passwordChangedAt.getTime()) {
+      throw new UnauthorizedException('Session expired');
+    }
 
-    const { isActive: _ignored, ...authUser } = user;
+    const { isActive: _ignored, passwordChangedAt: _changed, ...authUser } = user;
     req.user = authUser;
 
     const roles = this.reflector.getAllAndOverride<UserRole[] | undefined>(ROLES_KEY, targets);

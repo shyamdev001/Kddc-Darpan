@@ -15,13 +15,13 @@ export class ScreensController {
   ) {}
 
   @Get('screens')
-  list() {
-    return this.screens.list();
+  list(@CurrentUser() user: AuthUser) {
+    return this.screens.list(user);
   }
 
   @Get('screens/:id')
-  get(@Param('id', ParseUUIDPipe) id: string) {
-    return this.screens.detail(id);
+  get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    return this.screens.detail(id, user);
   }
 
   /** Limited so a pairing code cannot be guessed by trying many. */
@@ -54,7 +54,8 @@ export class ScreensController {
   /** Recent remote commands; the dashboard polls this while one is on its way. */
   @SkipThrottle()
   @Get('screens/:id/commands')
-  listCommands(@Param('id', ParseUUIDPipe) id: string) {
+  async listCommands(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
+    await this.screens.assertVisible(id, user);
     return this.commands.list(id);
   }
 
@@ -66,13 +67,19 @@ export class ScreensController {
   }
 
   @Get('screens/:id/screenshots/:commandId')
-  async screenshot(@Param('id', ParseUUIDPipe) id: string, @Param('commandId', ParseUUIDPipe) commandId: string, @Res() res: Response) {
+  async screenshot(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('commandId', ParseUUIDPipe) commandId: string,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ) {
+    await this.screens.assertVisible(id, user);
     const path = await this.commands.screenshotFile(id, commandId);
     res.sendFile(path, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' } });
   }
 
   @Get('branches')
-  branches() {
-    return this.screens.branches();
+  branches(@CurrentUser() user: AuthUser) {
+    return this.screens.branches(user);
   }
 }

@@ -11,8 +11,8 @@ export class AlertsController {
   constructor(private readonly alerts: AlertsService) {}
 
   @Get()
-  overview() {
-    return this.alerts.overview();
+  overview(@CurrentUser() user: AuthUser) {
+    return this.alerts.overview(user);
   }
 
   @Put('settings')

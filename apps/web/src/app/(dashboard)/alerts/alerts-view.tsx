@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { apiFetch } from "@/lib/api-client";
+import { useCanEdit } from "@/components/session-context";
 import { HoursEditor, type HoursLabels } from "../schedules/hours-editor";
 import { describeHours } from "../schedules/format";
 
@@ -48,6 +49,7 @@ export function AlertsView() {
   const [data, setData] = useState<AlertsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
+  const canEdit = useCanEdit();
 
   const accept = useCallback((d: AlertsResponse) => {
     setData(d);
@@ -69,12 +71,12 @@ export function AlertsView() {
   }
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+    <div className={canEdit ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px]" : "grid gap-6"}>
       <div className="grid gap-6">
         <OfflineNow alerts={data.open} now={now} settings={data.settings} />
         <BackOnline alerts={data.recent} now={now} />
       </div>
-      <SettingsCard key={JSON.stringify(data.settings)} data={data} onSaved={accept} />
+      {canEdit && <SettingsCard key={JSON.stringify(data.settings)} data={data} onSaved={accept} />}
     </div>
   );
 }

@@ -32,6 +32,7 @@ export class ReleasesController {
   constructor(private readonly releases: ReleasesService) {}
 
   @Get()
+  @Roles('HO_ADMIN')
   list() {
     return this.releases.overview();
   }

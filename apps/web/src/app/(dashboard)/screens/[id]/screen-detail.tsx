@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { useCanEdit } from "@/components/session-context";
 import { apiFetch } from "@/lib/api-client";
 import { formatAgo, formatDay } from "@/lib/format";
 import { OrientationPicker } from "../orientation-picker";
@@ -31,6 +32,7 @@ const REFRESH_MS = 30_000;
 
 export function ScreenDetailView() {
   const { id } = useParams<{ id: string }>();
+  const canEdit = useCanEdit();
   const [screen, setScreen] = useState<ScreenDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [now, setNow] = useState(0); // set with each fetch; Date.now() is not allowed during prerender
@@ -79,7 +81,7 @@ export function ScreenDetailView() {
         </p>
       </header>
 
-      {!screen.paired && (
+      {!screen.paired && canEdit && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-haldi/40 bg-[#fdf6e7] px-4 py-3 sm:px-5">
           <p className="max-w-2xl text-[15px] text-[#6b4600]">
             This TV was reset and is showing a new pairing code. Pair it with that code to bring it back; enter the same
@@ -91,10 +93,12 @@ export function ScreenDetailView() {
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid gap-6">
-          <PlaylistCard screen={screen} onSaved={accept} />
-          <SettingsCard key={screen.id + screen.name + screen.branch?.id + screen.orientation} screen={screen} onSaved={accept} />
+          <PlaylistCard screen={screen} onSaved={accept} canEdit={canEdit} />
+          {canEdit && (
+            <SettingsCard key={screen.id + screen.name + screen.branch?.id + screen.orientation} screen={screen} onSaved={accept} />
+          )}
         </div>
-        <DeviceCard screen={screen} ago={ago} />
+        <DeviceCard screen={screen} ago={ago} canEdit={canEdit} />
       </div>
     </div>
   );
@@ -120,7 +124,18 @@ function ErrorText({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PlaylistCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: ScreenDetail) => void }) {
+/** Playlist pages are head office only, so viewers get the name without a link. */
+function PlaylistName({ id, name, link }: { id: string; name: string; link: boolean }) {
+  return link ? (
+    <Link href={`/playlists/${id}`} className="font-medium text-neel hover:underline">
+      {name}
+    </Link>
+  ) : (
+    <span className="font-medium">{name}</span>
+  );
+}
+
+function PlaylistCard({ screen, onSaved, canEdit }: { screen: ScreenDetail; onSaved: (s: ScreenDetail) => void; canEdit: boolean }) {
   const [playlists, setPlaylists] = useState<PlaylistSummary[] | null>(null);
   const [choice, setChoice] = useState(screen.ownPlaylistId ?? "");
   const [saving, setSaving] = useState(false);
@@ -128,10 +143,11 @@ function PlaylistCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: 
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    if (!canEdit) return;
     apiFetch<PlaylistSummary[]>("/api/playlists")
       .then(setPlaylists)
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [canEdit]);
 
   const dirty = choice !== (screen.ownPlaylistId ?? "");
   const inherited = screen.fallbackPlaylist;
@@ -155,8 +171,9 @@ function PlaylistCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: 
   }
 
   return (
-    <Card title="What it plays" description="The TV picks up a change the next time it checks in.">
+    <Card title="What it plays" description={canEdit ? "The TV picks up a change the next time it checks in." : undefined}>
       <div className="grid gap-4">
+        {canEdit && (
         <div className="flex flex-wrap items-end gap-3">
           <div className="grid min-w-56 flex-1 gap-2">
             <Label htmlFor="screen-playlist">Playlist</Label>
@@ -174,6 +191,7 @@ function PlaylistCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: 
             {saving ? "Saving" : saved && !dirty ? "Saved" : "Save"}
           </Button>
         </div>
+        )}
 
         {chosen && chosen.itemCount === 0 && (
           <p className="text-sm text-[#8a5a00]">That playlist is empty, so the screen would show nothing. Add posters to it first.</p>
@@ -181,15 +199,12 @@ function PlaylistCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: 
 
         {screen.playlist ? (
           <p className="text-[15px]">
-            Now playing{" "}
-            <Link href={`/playlists/${screen.playlist.id}`} className="font-medium text-neel hover:underline">
-              {screen.playlist.name}
-            </Link>
+            Now playing <PlaylistName id={screen.playlist.id} name={screen.playlist.name} link={canEdit} />
             {screen.playlist.source !== "SCREEN" && <span className="text-muted-foreground"> ({SOURCE_TEXT[screen.playlist.source]})</span>}.
           </p>
         ) : (
           <p className="text-[15px] text-[#8a5a00]">
-            {screen.scheduled.length ? "Nothing is playing right now." : "No playlist yet, so the TV shows a blank screen. Choose one above."}
+            {screen.scheduled.length ? "Nothing is playing right now." : canEdit ? "No playlist yet, so the TV shows a blank screen. Choose one above." : "No playlist yet, so the TV shows a blank screen."}
           </p>
         )}
 
@@ -199,9 +214,7 @@ function PlaylistCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: 
             <ul className="grid gap-1 text-sm">
               {screen.scheduled.map((s) => (
                 <li key={`${s.source}-${s.id}-${s.slots.map(describeSlot).join()}`}>
-                  <Link href={`/playlists/${s.id}`} className="font-medium text-neel hover:underline">
-                    {s.name}
-                  </Link>
+                  <PlaylistName id={s.id} name={s.name} link={canEdit} />
                   <span className="text-muted-foreground">
                     {" "}
                     {s.slots.map(describeSlot).join("; ")}
@@ -210,9 +223,11 @@ function PlaylistCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: 
                 </li>
               ))}
             </ul>
-            <Link href="/schedules" className="text-sm text-muted-foreground hover:text-foreground">
-              Manage on Schedules
-            </Link>
+            {canEdit && (
+              <Link href="/schedules" className="text-sm text-muted-foreground hover:text-foreground">
+                Manage on Schedules
+              </Link>
+            )}
           </div>
         )}
         {error && <ErrorText>{error}</ErrorText>}
@@ -290,7 +305,7 @@ function mb(free: number | null, total: number | null): string | null {
   return total ? `${gb(free)} free of ${gb(total)}` : `${gb(free)} free`;
 }
 
-function DeviceCard({ screen, ago }: { screen: ScreenDetail; ago: string | null }) {
+function DeviceCard({ screen, ago, canEdit }: { screen: ScreenDetail; ago: string | null; canEdit: boolean }) {
   const router = useRouter();
   const [confirm, setConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -342,8 +357,9 @@ function DeviceCard({ screen, ago }: { screen: ScreenDetail; ago: string | null 
         </dl>
       </section>
 
-      <RemoteCard screen={screen} />
+      {canEdit && <RemoteCard screen={screen} />}
 
+      {canEdit && (
       <div className="rounded-xl border bg-card px-4 py-4 sm:px-5">
         <p className="text-sm text-muted-foreground">
           Removing forgets this TV. If the app is still running it shows a new code and can be paired again.
@@ -362,6 +378,7 @@ function DeviceCard({ screen, ago }: { screen: ScreenDetail; ago: string | null 
           </div>
         )}
       </div>
+      )}
 
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent>

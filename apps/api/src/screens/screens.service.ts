@@ -13,6 +13,7 @@ import {
 } from '@darpan/shared';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
+import { branchScope, isHeadOffice, screenScope } from '../auth/scope';
 import { Prisma } from '../generated/prisma/client';
 import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
@@ -129,22 +130,29 @@ export class ScreensService {
 
   // ---------- Dashboard side ----------
 
-  async list(): Promise<ScreenListResponse> {
+  async list(user: AuthUser): Promise<ScreenListResponse> {
     const now = new Date();
     const [rows, waitingToPair] = await Promise.all([
       // Unnamed pending rows are TVs showing a code; they appear in the list once claimed.
       this.prisma.screen.findMany({
-        where: { NOT: { status: 'PENDING', name: null } },
+        where: { NOT: { status: 'PENDING', name: null }, ...screenScope(user) },
         include: screenInclude,
         orderBy: [{ name: 'asc' }],
       }),
-      this.prisma.screen.count({ where: { status: 'PENDING', name: null, pairingExpires: { gt: now } } }),
+      isHeadOffice(user) ? this.prisma.screen.count({ where: { status: 'PENDING', name: null, pairingExpires: { gt: now } } }) : 0,
     ]);
     const playlists = await this.resolver.resolveMany(rows);
     return { items: rows.map((r) => this.toSummary(r, playlists.get(r.id) ?? null)), waitingToPair };
   }
 
-  async detail(id: string): Promise<ScreenDetail> {
+  /** 404, not 403, for a screen outside the user's area, so ids cannot be probed. */
+  async assertVisible(id: string, user: AuthUser): Promise<void> {
+    if (isHeadOffice(user)) return;
+    if (!(await this.prisma.screen.count({ where: { id, ...screenScope(user) } }))) throw new NotFoundException('Screen not found');
+  }
+
+  async detail(id: string, user: AuthUser): Promise<ScreenDetail> {
+    await this.assertVisible(id, user);
     const s = await this.prisma.screen.findUnique({ where: { id }, include: screenInclude });
     if (!s || (s.status === 'PENDING' && s.name === null)) throw new NotFoundException('Screen not found');
     const [playlist, layers, inherited, hours] = await Promise.all([
@@ -214,17 +222,17 @@ export class ScreensService {
       ipAddress: ip,
     });
     this.events.screensChanged(screen.id);
-    return this.detail(screen.id);
+    return this.detail(screen.id, user);
   }
 
   async update(id: string, dto: UpdateScreenDto, user: AuthUser, ip?: string): Promise<ScreenDetail> {
-    const before = await this.detail(id);
+    const before = await this.detail(id, user);
     if (dto.branchId) await this.assertBranch(dto.branchId);
     await this.prisma.screen.update({
       where: { id },
       data: { name: dto.name, branchId: dto.branchId, orientation: dto.orientation },
     });
-    const after = await this.detail(id);
+    const after = await this.detail(id, user);
     await this.audit.log({
       userId: user.id,
       action: 'screen.update',
@@ -242,7 +250,7 @@ export class ScreensService {
 
   /** Sets, or clears with null, the playlist assigned directly to this screen. */
   async setPlaylist(id: string, playlistId: string | null, user: AuthUser, ip?: string): Promise<ScreenDetail> {
-    const before = await this.detail(id);
+    const before = await this.detail(id, user);
     if (playlistId) await this.assertPlaylist(playlistId);
     await this.prisma.$transaction(async (tx) => {
       await tx.assignment.deleteMany({ where: { screenId: id, targetType: 'SCREEN', schedules: { none: {} } } });
@@ -257,12 +265,12 @@ export class ScreensService {
       ipAddress: ip,
     });
     this.events.screensChanged(id);
-    return this.detail(id);
+    return this.detail(id, user);
   }
 
   /** Forgets the TV. Its token stops working; the app registers again and shows a new code. */
   async remove(id: string, user: AuthUser, ip?: string): Promise<void> {
-    const s = await this.detail(id);
+    const s = await this.detail(id, user);
     await this.commands.deleteScreenshots(id);
     await this.prisma.screen.delete({ where: { id } });
     this.gateway.disconnectScreen(id);
@@ -276,8 +284,9 @@ export class ScreensService {
     });
   }
 
-  async branches(): Promise<BranchOption[]> {
+  async branches(user: AuthUser): Promise<BranchOption[]> {
     const rows = await this.prisma.branch.findMany({
+      where: branchScope(user),
       include: { taluka: { select: { name: true, region: { select: { name: true } } } } },
       orderBy: { name: 'asc' },
     });

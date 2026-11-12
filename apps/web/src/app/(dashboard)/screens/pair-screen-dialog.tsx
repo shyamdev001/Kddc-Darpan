@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { BranchOption, ClaimScreenRequest, Orientation, PlaylistSummary, ScreenDetail } from "@darpan/shared";
 import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useCanEdit } from "@/components/session-context";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +21,8 @@ function formatCode(raw: string): string {
 
 export function PairScreenButton({ label = "Pair a screen" }: { label?: string }) {
   const [open, setOpen] = useState(false);
+  const canEdit = useCanEdit();
+  if (!canEdit) return null;
   return (
     <>
       <Button onClick={() => setOpen(true)} className="h-10 px-4 text-[15px]">

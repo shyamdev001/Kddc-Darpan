@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
+import { ChangePasswordButton } from "./change-password-button";
 import { LogoutButton } from "./logout-button";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -23,7 +24,14 @@ export async function UserMenu({ compact = false }: { compact?: boolean }) {
   // Cookie present but session invalid (expired, account disabled): back to sign-in.
   if (!user) redirect("/login?expired=1");
 
-  if (compact) return <LogoutButton iconOnly />;
+  if (compact) {
+    return (
+      <div className="flex items-center">
+        <ChangePasswordButton />
+        <LogoutButton iconOnly />
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-3 rounded-lg px-2 py-1.5">
@@ -39,6 +47,7 @@ export async function UserMenu({ compact = false }: { compact?: boolean }) {
           {ROLE_LABEL[user.role] ?? user.role}
         </p>
       </div>
+      <ChangePasswordButton />
       <LogoutButton iconOnly />
     </div>
   );

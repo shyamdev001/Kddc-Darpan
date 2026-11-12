@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { MAX_REPORT_DAYS, PLAYLOG_KEEP_DAYS, type PlayReport } from '@darpan/shared';
 import { Prisma } from '../generated/prisma/client';
+import type { AuthUser } from '../auth/auth.types';
+import { isHeadOffice, screenScopeSql } from '../auth/scope';
 import { PrismaService } from '../prisma/prisma.service';
 import type { PlayLogEntryDto, PlayReportQueryDto } from './reports.dto';
 
@@ -96,8 +98,8 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
 
   // ---- Reports ----
 
-  async report(q: PlayReportQueryDto): Promise<PlayReport> {
-    const where = this.where(q);
+  async report(q: PlayReportQueryDto, user: AuthUser): Promise<PlayReport> {
+    const where = this.where(q, user);
     const [byMedia, byScreen, byDay] = await Promise.all([
       this.prisma.$queryRaw<{ mediaId: string | null; name: string; plays: number; durationMs: bigint; screens: number }[]>`
         SELECT d."mediaId", COALESCE(m."displayName", max(d."mediaName")) AS name,
@@ -140,7 +142,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** One row per day, screen and ad. UTF-8 with a BOM so Excel shows Gujarati names correctly. */
-  async exportCsv(q: PlayReportQueryDto): Promise<string> {
+  async exportCsv(q: PlayReportQueryDto, user: AuthUser): Promise<string> {
     const rows = await this.prisma.$queryRaw<{ day: string; branch: string | null; screen: string; ad: string; plays: number; durationMs: bigint }[]>`
       SELECT to_char(d."day", 'YYYY-MM-DD') AS day, COALESCE(b."name", d."branchName") AS branch,
              COALESCE(s."name", d."screenName") AS screen, COALESCE(m."displayName", d."mediaName") AS ad,
@@ -149,7 +151,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       LEFT JOIN "Screen" s ON s."id" = d."screenId"
       LEFT JOIN "Branch" b ON b."id" = s."branchId"
       LEFT JOIN "Media" m ON m."id" = d."mediaId"
-      WHERE ${this.where(q)}
+      WHERE ${this.where(q, user)}
       ORDER BY d."day", branch NULLS LAST, screen, ad
       LIMIT ${MAX_EXPORT_ROWS}`;
     const lines = [['Date', 'Branch', 'Screen', 'Ad', 'Plays', 'Minutes on screen'].join(',')];
@@ -159,7 +161,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     return '﻿' + lines.join('\r\n') + '\r\n';
   }
 
-  private where(q: Filter): Prisma.Sql {
+  private where(q: Filter, user: AuthUser): Prisma.Sql {
     const from = Date.parse(`${q.from}T00:00:00Z`);
     const to = Date.parse(`${q.to}T00:00:00Z`);
     if (Number.isNaN(from) || Number.isNaN(to)) throw new BadRequestException('Not a real date');
@@ -169,6 +171,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     if (q.screenId) parts.push(Prisma.sql`d."screenId" = ${q.screenId}::uuid`);
     if (q.mediaId) parts.push(Prisma.sql`d."mediaId" = ${q.mediaId}::uuid`);
     if (q.branchId) parts.push(Prisma.sql`s."branchId" = ${q.branchId}::uuid`);
+    if (!isHeadOffice(user)) parts.push(screenScopeSql(user, 's'));
     return Prisma.join(parts, ' AND ');
   }
 }

@@ -25,6 +25,7 @@ export class PlacesController {
   ) {}
 
   @Get('places')
+  @Roles('HO_ADMIN')
   tree() {
     return this.places.tree();
   }

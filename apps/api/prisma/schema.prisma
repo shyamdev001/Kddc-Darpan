@@ -297,6 +297,7 @@ model User {
   totpSecret   String? // Phase 2 (encrypted)
   totpEnabled  Boolean   @default(false)
   lastLoginAt  DateTime?
+  passwordChangedAt DateTime? // sessions issued before this are refused
   regionId     String?   @db.Uuid // scope for REGION_MANAGER
   branchId     String?   @db.Uuid // scope for BRANCH_VIEWER
   createdAt    DateTime  @default(now())

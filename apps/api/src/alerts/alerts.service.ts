@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, type OnModuleDestroy, type OnM
 import { ONLINE_WINDOW_MS, hoursOn, type AlertEntry, type AlertSettingsValue, type AlertsResponse } from '@darpan/shared';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
+import { isHeadOffice, screenScope } from '../auth/scope';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlaylistResolver } from '../screens/playlist-resolver.service';
@@ -78,16 +79,17 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
     };
     await this.prisma.alertSettings.upsert({ where: { id: 1 }, create: { id: 1, ...data }, update: data });
     await this.audit.log({ userId: user.id, action: 'alert_settings.update', entityType: 'AlertSettings', entityId: '1', details: data, ipAddress: ip });
-    return this.overview();
+    return this.overview(user);
   }
 
   // ---- Dashboard ----
 
-  async overview(): Promise<AlertsResponse> {
+  async overview(user: AuthUser): Promise<AlertsResponse> {
+    const scope = { screen: screenScope(user) };
     const since = new Date(Date.now() - RECENT_DAYS * 86_400_000);
     const [open, recent, settings] = await Promise.all([
-      this.prisma.screenAlert.findMany({ where: { resolvedAt: null }, include: alertInclude, orderBy: { offlineSince: 'asc' } }),
-      this.prisma.screenAlert.findMany({ where: { resolvedAt: { gte: since } }, include: alertInclude, orderBy: { resolvedAt: 'desc' }, take: 50 }),
+      this.prisma.screenAlert.findMany({ where: { resolvedAt: null, ...scope }, include: alertInclude, orderBy: { offlineSince: 'asc' } }),
+      this.prisma.screenAlert.findMany({ where: { resolvedAt: { gte: since }, ...scope }, include: alertInclude, orderBy: { resolvedAt: 'desc' }, take: 50 }),
       this.settings(),
     ]);
     const entry = (a: (typeof open)[number]): AlertEntry => ({
@@ -98,7 +100,9 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
       notifiedAt: a.notifiedAt?.toISOString() ?? null,
       resolvedAt: a.resolvedAt?.toISOString() ?? null,
     });
-    return { open: open.map(entry), recent: recent.map(entry), settings, mailDriver: this.mail.driver };
+    // Recipient addresses are head office's business.
+    const shown = isHeadOffice(user) ? settings : { ...settings, recipients: [] };
+    return { open: open.map(entry), recent: recent.map(entry), settings: shown, mailDriver: this.mail.driver };
   }
 
   async sendTest(user: AuthUser, ip?: string): Promise<{ sentTo: string[] }> {

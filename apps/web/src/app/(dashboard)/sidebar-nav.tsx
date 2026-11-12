@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay, PackageCheck } from "lucide-react";
+import type { UserRole } from "@darpan/shared";
+import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay, PackageCheck, UsersRound } from "lucide-react";
+import { canOpen } from "@/components/session-context";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -15,21 +17,22 @@ const items = [
   { href: "/reports", label: "Proof of play", icon: BarChart3 },
   { href: "/alerts", label: "Alerts", icon: BellRing },
   { href: "/updates", label: "App updates", icon: PackageCheck },
+  { href: "/users", label: "Users", icon: UsersRound },
 ] as const;
 
-export function SidebarNav() {
-  return <NavLinks pathname={usePathname()} />;
+export function SidebarNav({ role }: { role: UserRole }) {
+  return <NavLinks pathname={usePathname()} role={role} />;
 }
 
-/** Same links with nothing highlighted, shown until the URL is known. */
+/** Shown until the user is known: only the links every role has, nothing highlighted. */
 export function SidebarNavFallback() {
-  return <NavLinks pathname={null} />;
+  return <NavLinks pathname={null} role="BRANCH_VIEWER" />;
 }
 
-function NavLinks({ pathname }: { pathname: string | null }) {
+function NavLinks({ pathname, role }: { pathname: string | null; role: UserRole }) {
   return (
     <nav aria-label="Main" className="flex gap-1 overflow-x-auto px-3 pb-3 [scrollbar-width:none] lg:flex-col lg:px-3 lg:pt-2">
-      {items.map(({ href, label, icon: Icon }) => {
+      {items.filter(({ href }) => canOpen(href, role)).map(({ href, label, icon: Icon }) => {
         const active = pathname !== null && (href === "/" ? pathname === "/" : pathname.startsWith(href));
         return (
           <Link

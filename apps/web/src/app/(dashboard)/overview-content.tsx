@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Check, ChevronRight } from "lucide-react";
-import { apiGet } from "@/lib/session";
+import { canEdit } from "@darpan/shared";
+import { apiGet, getSessionUser } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 interface Overview {
@@ -15,8 +16,9 @@ interface Overview {
 const nf = new Intl.NumberFormat("en-IN");
 
 export async function OverviewContent() {
-  const data = await apiGet<Overview>("/stats/overview");
-  if (!data) redirect("/login?expired=1");
+  const [data, user] = await Promise.all([apiGet<Overview>("/stats/overview"), getSessionUser()]);
+  if (!data || !user) redirect("/login?expired=1");
+  const editor = canEdit(user.role);
 
   const { screens } = data;
   const offline = screens.total - screens.online;
@@ -97,7 +99,7 @@ export async function OverviewContent() {
       </section>
 
       {/* First screen checklist: a real sequence, so it is numbered */}
-      {doneCount < steps.length && (
+      {editor && doneCount < steps.length && (
         <section aria-labelledby="setup-heading">
           <div className="mb-4 flex items-baseline justify-between gap-4">
             <h2 id="setup-heading" className="text-xl font-semibold tracking-tight">

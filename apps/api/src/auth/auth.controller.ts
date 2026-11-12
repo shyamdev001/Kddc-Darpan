@@ -5,6 +5,7 @@ import { SESSION_COOKIE, sessionTtlHours } from './auth.constants';
 import { AuthService } from './auth.service';
 import type { AuthUser } from './auth.types';
 import { CurrentUser, Public } from './decorators';
+import { ChangeOwnPasswordDto } from '../users/users.dto';
 import { LoginDto } from './login.dto';
 
 function cookieOptions(): CookieOptions {
@@ -35,6 +36,20 @@ export class AuthController {
   async logout(@CurrentUser() user: AuthUser, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await this.auth.logout(user, req.ip);
     res.clearCookie(SESSION_COOKIE, cookieOptions());
+    return { ok: true };
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('password')
+  @HttpCode(200)
+  async changePassword(
+    @Body() dto: ChangeOwnPasswordDto,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = await this.auth.changePassword(user, dto.currentPassword, dto.newPassword, req.ip);
+    res.cookie(SESSION_COOKIE, token, { ...cookieOptions(), maxAge: sessionTtlHours() * 3600_000 });
     return { ok: true };
   }
 

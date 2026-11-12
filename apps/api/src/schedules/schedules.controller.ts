@@ -11,6 +11,7 @@ export class SchedulesController {
   constructor(private readonly schedules: SchedulesService) {}
 
   @Get('schedules')
+  @Roles('HO_ADMIN')
   list() {
     return this.schedules.list();
   }
@@ -35,6 +36,7 @@ export class SchedulesController {
   }
 
   @Get('display-hours')
+  @Roles('HO_ADMIN')
   hours() {
     return this.schedules.listHours();
   }
