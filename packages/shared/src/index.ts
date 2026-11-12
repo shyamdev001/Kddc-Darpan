@@ -7,3 +7,4 @@ export * from './places';
 export * from './schedule';
 export * from './alerts';
 export * from './reports';
+export * from './releases';

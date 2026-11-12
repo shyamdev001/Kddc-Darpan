@@ -130,6 +130,9 @@ model Screen {
   currentMediaId  String?   @db.Uuid
   manifestVersion String?
   kioskState      String? // off | locked | maintenance, from the heartbeat
+  appVersionCode  Int? // from the heartbeat; compared with releases
+  updateStatus    String? // the TV's last word on an app update, e.g. "Failed: ..."
+  testUpdates     Boolean   @default(false) // gets app releases in the TEST stage
   kioskUntil      DateTime? // maintenance ends
   lastSeenAt      DateTime?
   ipAddress       String?
@@ -305,6 +308,7 @@ model User {
   playlists Playlist[]
   auditLogs AuditLog[]
   commands  DeviceCommand[]
+  releases  AppRelease[]
 }
 
 model AuditLog {
@@ -381,17 +385,28 @@ model DeviceCommand {
   @@index([screenId, status])
 }
 
+/// Where a TV app version is offered. Test screens first, then every screen.
+enum ReleaseStage {
+  TEST // only screens marked for test updates
+  ALL // every screen
+  STOPPED // offered to none (a bad build); TVs already on it keep it
+}
+
+/// A TV app build uploaded on the dashboard. TVs in kiosk mode install the newest one offered to them.
 model AppRelease {
-  id          String   @id @default(uuid()) @db.Uuid
-  versionCode Int      @unique
-  versionName String
-  storageKey  String
-  sha256      String
-  sizeBytes   BigInt
-  notes       String?
-  isTestOnly  Boolean  @default(true) // roll out to test group first
-  isActive    Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id           String       @id @default(uuid()) @db.Uuid
+  versionCode  Int          @unique
+  versionName  String
+  storageKey   String
+  sha256       String
+  sizeBytes    BigInt
+  notes        String?
+  stage        ReleaseStage @default(TEST)
+  uploadedById String?      @db.Uuid
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  uploadedBy User? @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
 }
 
 /// Offline-alert settings (one row, id 1). Times are India time.

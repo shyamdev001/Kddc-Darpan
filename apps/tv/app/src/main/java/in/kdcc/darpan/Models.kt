@@ -92,4 +92,15 @@ data class Manifest(
     /** Most important first: play the first one whose slots match now. */
     val playlists: List<ManifestPlaylist> = emptyList(),
     val settings: ManifestSettings = ManifestSettings(),
+    /** A newer app build offered to this TV, if any. */
+    val app: ManifestApp? = null,
+)
+
+@Serializable
+data class ManifestApp(
+    val versionCode: Int,
+    val versionName: String,
+    val url: String,
+    val sha256: String,
+    val size: Long,
 )

@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- App updates (OTA): silent install works only while the app is device owner (kiosk mode). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Runs on Android TV and on plain Android boxes; no touch screen needed. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -58,11 +60,16 @@
             android:exported="false" />
 
         <receiver
+            android:name=".UpdateReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
     </application>

@@ -68,6 +68,17 @@ export interface Manifest {
    */
   playlists: ManifestPlaylist[];
   settings: ManifestSettings;
+  /** Newer TV app to install, if one is offered to this screen; TVs on that version or newer ignore it. */
+  app?: ManifestApp | null;
+}
+
+/** A TV app build (APK) in the manifest. Download with the device token, check sha256, install. */
+export interface ManifestApp {
+  versionCode: number;
+  versionName: string;
+  url: string;
+  sha256: string;
+  size: number;
 }
 
 /** Socket.IO namespace `/devices`. Connect with `auth: { token: deviceToken }`. */
@@ -86,6 +97,10 @@ export interface HeartbeatPayload {
   kiosk?: string;
   /** ISO time maintenance ends, or null */
   kioskUntil?: string | null;
+  /** Android versionCode of the running app */
+  appVersionCode?: number;
+  /** Last word on an app update ("Downloading 0.1.9", "Failed: ..."); null when idle */
+  updateStatus?: string | null;
 }
 
 export type DeviceCommandType =

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay } from "lucide-react";
+import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay, PackageCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -14,6 +14,7 @@ const items = [
   { href: "/branches", label: "Branches", icon: Building2 },
   { href: "/reports", label: "Proof of play", icon: BarChart3 },
   { href: "/alerts", label: "Alerts", icon: BellRing },
+  { href: "/updates", label: "App updates", icon: PackageCheck },
 ] as const;
 
 export function SidebarNav() {

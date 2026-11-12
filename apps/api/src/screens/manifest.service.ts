@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Manifest, ManifestItem, ManifestPlaylist, ManifestSettings } from '@darpan/shared';
+import type { Manifest, ManifestApp, ManifestItem, ManifestPlaylist, ManifestSettings } from '@darpan/shared';
 import { createHash } from 'node:crypto';
 import { effectiveSeconds } from '../playlists/playlists.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,7 +23,7 @@ export class ManifestService {
    * left out. Upcoming ads are included with validFrom so the TV can download them early.
    */
   async build(screenId: string): Promise<Manifest> {
-    const screen = await this.prisma.screen.findUnique({ where: { id: screenId }, select: { ...screenPlaceSelect, orientation: true } });
+    const screen = await this.prisma.screen.findUnique({ where: { id: screenId }, select: { ...screenPlaceSelect, orientation: true, testUpdates: true } });
     if (!screen) throw new NotFoundException();
 
     const now = new Date();
@@ -69,8 +69,25 @@ export class ManifestService {
 
     const items = [...media.values()];
     const settings: ManifestSettings = { orientation: screen.orientation, hours: hours?.hours ?? null };
+    const app = await this.appOffer(screen.testUpdates);
     // The version only changes when what the TV must do changes, so it can skip identical manifests.
-    const version = createHash('sha256').update(JSON.stringify({ items, playlists, settings })).digest('hex').slice(0, 16);
-    return { version, generatedAt: now.toISOString(), items, playlists, settings };
+    const version = createHash('sha256').update(JSON.stringify({ items, playlists, settings, app })).digest('hex').slice(0, 16);
+    return { version, generatedAt: now.toISOString(), items, playlists, settings, app };
+  }
+
+  /** The newest app build offered to this screen: released to all, or in test and this is a test screen. */
+  private async appOffer(testScreen: boolean): Promise<ManifestApp | null> {
+    const r = await this.prisma.appRelease.findFirst({
+      where: { stage: { in: testScreen ? ['ALL', 'TEST'] : ['ALL'] } },
+      orderBy: { versionCode: 'desc' },
+    });
+    if (!r) return null;
+    return {
+      versionCode: r.versionCode,
+      versionName: r.versionName,
+      url: `${publicBase()}/api/devices/app/${r.id}`,
+      sha256: r.sha256,
+      size: Number(r.sizeBytes),
+    };
   }
 }

@@ -136,6 +136,10 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
         ramTotalMb: mb(body.ramTotalBytes),
         appVersion: shortText(body.appVersion, 40),
         manifestVersion: shortText(body.manifestVersion, 64),
+        ...(Number.isInteger(body.appVersionCode) && body.appVersionCode! > 0 && body.appVersionCode! < 2 ** 31
+          ? { appVersionCode: body.appVersionCode }
+          : {}),
+        ...('updateStatus' in body ? { updateStatus: shortText(body.updateStatus, 200) ?? null } : {}),
         // Older app versions send no kiosk fields: leave what we had.
         ...(typeof body.kiosk === 'string' && (KIOSK_STATES as readonly string[]).includes(body.kiosk)
           ? { kioskState: body.kiosk, kioskUntil: kioskUntil(body.kiosk, body.kioskUntil) }

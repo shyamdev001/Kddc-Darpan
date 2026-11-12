@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AlertsModule } from './alerts/alerts.module';
+import { ReleasesModule } from './releases/releases.module';
 import { ReportsModule } from './reports/reports.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
@@ -34,6 +35,7 @@ import { StorageModule } from './storage/storage.module';
     MailModule,
     AlertsModule,
     ReportsModule,
+    ReleasesModule,
   ],
   controllers: [HealthController, StatsController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -53,6 +53,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var cache: MediaCache
     private lateinit var store: ManifestStore
     private lateinit var plays: PlayLogStore
+    private lateinit var updater: Updater
     private lateinit var playback: Playback
 
     private lateinit var root: FrameLayout
@@ -95,6 +96,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         cache = MediaCache(filesDir, api.http, prefs)
         store = ManifestStore(filesDir)
         plays = PlayLogStore(filesDir)
+        updater = Updater(this, api.http, prefs) { runOnUiThread { link?.sendHeartbeat() } }
         playback = Playback(
             this,
             findViewById<ImageView>(R.id.imageA),
@@ -343,6 +345,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             applyManifest(m)
             withContext(Dispatchers.IO) { downloadAll(m) }
             link?.sendHeartbeat()
+            scope.launch { updater.consider(m.app) } // may wait minutes; must not hold the sync lock
             return@withLock true
         } catch (e: CancellationException) {
             throw e
@@ -514,6 +517,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("ramTotalBytes", mem.totalMem)
             .put("appVersion", BuildConfig.VERSION_NAME)
             .put("manifestVersion", manifestVersion ?: "")
+            .put("appVersionCode", BuildConfig.VERSION_CODE)
+            .put("updateStatus", updater.status ?: JSONObject.NULL)
             .put("kiosk", Kiosk.state(this))
             .put("kioskUntil", Kiosk.maintenanceEndsAt(this)?.let { iso(it) } ?: JSONObject.NULL)
     }

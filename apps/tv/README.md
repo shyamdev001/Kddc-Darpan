@@ -22,6 +22,12 @@ There is no Android Studio on the dev machine: GitHub Actions builds the APK
    and uploaded every hour to `POST /api/devices/playlogs`. The dashboard's Proof of play page reads it.
 9. Kiosk mode when the app is the TV's device owner (setup below): pinned to Darpan, a watchdog, and a
    15-minute maintenance unlock from the dashboard (`kioskUnlock` / `kioskLock` commands).
+10. App updates (OTA): upload the built APK on the dashboard's App updates page. It goes to the ticked
+    test screens first; "Release to all screens" sends it everywhere. A TV waits a random 0-10 minutes,
+    downloads it (resumable), checks its SHA-256 and installs it silently, then restarts into the new
+    version. Silent install needs kiosk mode (device owner); other TVs show the new version on the
+    dashboard and are updated by hand. A failed install is retried after 6 hours. Every APK must be
+    signed with the same key (the GitHub secrets), or Android refuses the update.
 
 ## Build settings (GitHub repository settings)
 | Name | Kind | Purpose |
@@ -84,5 +90,5 @@ Notes:
 - To take kiosk mode off a TV, factory reset it.
 
 ## Not yet (Phase 2)
-OTA updates, brightness, emergency broadcast.
+Brightness, emergency broadcast.
 Portrait TVs are rotated 90° clockwise; a flip option may be needed.
