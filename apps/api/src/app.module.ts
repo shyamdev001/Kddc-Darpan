@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AlertsModule } from './alerts/alerts.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { EventsModule } from './events/content-events';
 import { HealthController } from './health.controller';
+import { MailModule } from './mail/mail.service';
 import { MediaModule } from './media/media.module';
 import { PlacesModule } from './places/places.module';
 import { PlaylistsModule } from './playlists/playlists.module';
@@ -28,6 +30,8 @@ import { StorageModule } from './storage/storage.module';
     ScreensModule,
     PlacesModule,
     SchedulesModule,
+    MailModule,
+    AlertsModule,
   ],
   controllers: [HealthController, StatsController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

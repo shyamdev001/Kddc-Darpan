@@ -77,7 +77,11 @@ export async function OverviewContent() {
                 ? "No screens paired yet."
                 : offline === 0
                   ? "Every paired screen is online."
-                  : `${nf.format(offline)} offline for more than 3 minutes.`}
+                  : (
+                    <Link href="/alerts" className="text-foreground underline-offset-2 hover:text-neel hover:underline">
+                      {nf.format(offline)} offline for more than 3 minutes
+                    </Link>
+                  )}
               {screens.waitingToPair > 0 && ` ${screens.waitingToPair} waiting to be paired.`}
             </p>
           </div>

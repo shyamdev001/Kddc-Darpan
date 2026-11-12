@@ -141,6 +141,7 @@ model Screen {
   displayHours DisplayHours[]
   commands     DeviceCommand[]
   playLogs     PlayLog[]
+  alerts       ScreenAlert[]
 
   @@index([branchId])
   @@index([status])
@@ -364,4 +365,34 @@ model AppRelease {
   isTestOnly  Boolean  @default(true) // roll out to test group first
   isActive    Boolean  @default(false)
   createdAt   DateTime @default(now())
+}
+
+/// Offline-alert settings (one row, id 1). Times are India time.
+model AlertSettings {
+  id              Int      @id @default(1)
+  enabled         Boolean  @default(true)
+  offlineAfterMin Int      @default(15)
+  recipients      String[]
+  /// For screens without display hours: only alert inside this window.
+  daysOfWeek      Int[]    @default([1, 2, 3, 4, 5, 6])
+  onTime          String   @default("10:00")
+  offTime         String   @default("17:30")
+  closedSaturdays Int[]    @default([2, 4])
+  updatedAt       DateTime @updatedAt
+}
+
+/// One stretch of a screen being offline. Open while resolvedAt is null.
+model ScreenAlert {
+  id           String    @id @default(uuid()) @db.Uuid
+  screenId     String    @db.Uuid
+  offlineSince DateTime
+  /// When the email went out; null while outside the hours the screen should be on.
+  notifiedAt   DateTime?
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+
+  @@index([screenId, resolvedAt])
+  @@index([resolvedAt])
 }

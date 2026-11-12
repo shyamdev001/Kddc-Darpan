@@ -10,28 +10,54 @@ export const DEFAULT_HOURS: DisplayHoursValue = { days: [1, 2, 3, 4, 5, 6], on: 
 
 const ORDINAL = ["1st", "2nd", "3rd", "4th", "5th"];
 
+export interface HoursLabels {
+  days: string;
+  on: string;
+  off: string;
+  saturdays: string;
+  saturdayHint: string;
+}
+
+const SCREEN_LABELS: HoursLabels = {
+  days: "Days the screens are on",
+  on: "Turn on",
+  off: "Turn off",
+  saturdays: "Saturdays that are off",
+  saturdayHint: "Banks close on the 2nd and 4th Saturday. Screens stay dark on the ones picked here.",
+};
+
 /** Days, on/off times and which Saturdays are bank holidays. Controlled. */
-export function HoursEditor({ value, onChange, idPrefix }: { value: DisplayHoursValue; onChange: (h: DisplayHoursValue) => void; idPrefix: string }) {
+export function HoursEditor({
+  value,
+  onChange,
+  idPrefix,
+  labels = SCREEN_LABELS,
+}: {
+  value: DisplayHoursValue;
+  onChange: (h: DisplayHoursValue) => void;
+  idPrefix: string;
+  labels?: HoursLabels;
+}) {
   const set = (patch: Partial<DisplayHoursValue>) => onChange({ ...value, ...patch });
   const saturdays = value.days.includes(6);
 
   return (
     <div className="grid gap-4">
-      <DayPicker label="Days the screens are on" value={value.days} onChange={(days) => set({ days })} />
+      <DayPicker label={labels.days} value={value.days} onChange={(days) => set({ days })} />
       <div className="flex flex-wrap items-end gap-3">
         <div className="grid gap-1.5">
-          <Label htmlFor={`${idPrefix}-on`}>Turn on</Label>
+          <Label htmlFor={`${idPrefix}-on`}>{labels.on}</Label>
           <TimeInput id={`${idPrefix}-on`} value={value.on} onChange={(on) => set({ on })} />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor={`${idPrefix}-off`}>Turn off</Label>
+          <Label htmlFor={`${idPrefix}-off`}>{labels.off}</Label>
           <TimeInput id={`${idPrefix}-off`} value={value.off} onChange={(off) => set({ off })} />
         </div>
       </div>
       {saturdays && (
         <div className="grid gap-2">
-          <span className="text-sm font-medium">Saturdays that are off</span>
-          <div role="group" aria-label="Saturdays that are off" className="flex flex-wrap gap-1.5">
+          <span className="text-sm font-medium">{labels.saturdays}</span>
+          <div role="group" aria-label={labels.saturdays} className="flex flex-wrap gap-1.5">
             {ORDINAL.map((label, i) => {
               const n = i + 1;
               const on = value.closedSaturdays.includes(n);
@@ -53,7 +79,7 @@ export function HoursEditor({ value, onChange, idPrefix }: { value: DisplayHours
               );
             })}
           </div>
-          <p className="text-sm text-muted-foreground">Banks close on the 2nd and 4th Saturday. Screens stay dark on the ones picked here.</p>
+          <p className="text-sm text-muted-foreground">{labels.saturdayHint}</p>
         </div>
       )}
       {value.days.length > 0 && <WeekBar hours={value} />}
