@@ -61,6 +61,7 @@ data class DisplayHours(
     val on: String,
     val off: String,
     val closedSaturdays: List<Int> = emptyList(), // e.g. 2nd and 4th
+    val brightness: Int? = null, // percent while on; null = leave the TV's own setting
 )
 
 @Serializable

@@ -124,7 +124,7 @@ export class PlaylistResolver {
       out.set(
         s.id,
         best
-          ? { source: best.targetType, hours: { days: best.daysOfWeek, on: best.onTime, off: best.offTime, closedSaturdays: best.closedSaturdays } }
+          ? { source: best.targetType, hours: { days: best.daysOfWeek, on: best.onTime, off: best.offTime, closedSaturdays: best.closedSaturdays, brightness: best.brightness } }
           : null,
       );
     }

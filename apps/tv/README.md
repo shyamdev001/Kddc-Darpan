@@ -89,6 +89,12 @@ Notes:
 - A TV has only one device owner. TVs still running the old vendor kiosk app need a factory reset first.
 - To take kiosk mode off a TV, factory reset it.
 
-## Not yet (Phase 2)
-Brightness, emergency broadcast.
+## Brightness
+Set on the dashboard with the display hours (Schedules > Display hours > Set screen brightness). The TV
+applies it in two ways: the system brightness (kiosk TVs on Android 9 or newer; the TV's own value is
+put back when brightness is turned off again) and the app's own window brightness. Many TVs drive the
+backlight from their picture settings and ignore one or both, so check it on the real TV.
+
+## Not yet
+Emergency broadcast.
 Portrait TVs are rotated 90° clockwise; a flip option may be needed.

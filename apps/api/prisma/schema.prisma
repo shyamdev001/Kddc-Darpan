@@ -275,6 +275,7 @@ model DisplayHours {
   onTime          String // "HH:mm" local
   offTime         String // "HH:mm" local
   closedSaturdays Int[] // e.g. [2, 4]: 2nd and 4th Saturday off (bank holidays)
+  brightness      Int? // percent while on (10-100); null = leave the TV's own setting
   updatedAt       DateTime         @updatedAt
 
   screen Screen? @relation(fields: [screenId], references: [id], onDelete: Cascade)

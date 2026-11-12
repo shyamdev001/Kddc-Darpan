@@ -14,7 +14,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { DATE_RE, TIME_RE, type PlaylistSource } from '@darpan/shared';
+import { BRIGHTNESS_MIN, DATE_RE, TIME_RE, type PlaylistSource } from '@darpan/shared';
 
 const LEVELS: PlaylistSource[] = ['ALL', 'REGION', 'TALUKA', 'BRANCH', 'SCREEN'];
 
@@ -97,6 +97,12 @@ export class DisplayHoursDto {
   @Min(1, { each: true })
   @Max(5, { each: true })
   closedSaturdays!: number[];
+
+  @IsOptional()
+  @IsInt({ message: 'Brightness is a whole number' })
+  @Min(BRIGHTNESS_MIN, { message: `Brightness is at least ${BRIGHTNESS_MIN}%` })
+  @Max(100, { message: 'Brightness is at most 100%' })
+  brightness?: number | null;
 }
 
 export class SetDisplayHoursDto {

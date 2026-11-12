@@ -22,7 +22,14 @@ export interface DisplayHoursValue {
   off: string; // "HH:mm"
   /** Saturdays of the month that are off, e.g. [2, 4] for bank holidays. */
   closedSaturdays: number[];
+  /**
+   * Screen brightness while on, in percent (BRIGHTNESS_MIN to 100). Unset or null leaves the TV's
+   * own setting alone. Only for screen hours; the alert window ignores it.
+   */
+  brightness?: number | null;
 }
+
+export const BRIGHTNESS_MIN = 10;
 
 export const IST_OFFSET_MIN = 330;
 export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;

@@ -338,7 +338,7 @@ function HoursForm({ edit, onClose, onSaved }: { edit: HoursEdit; onClose: () =>
       </div>
       <form onSubmit={save} className="grid gap-5">
         {!fixed && <TargetPicker value={target} onChange={(t) => setTarget(t.level === "ALL" ? { level: "BRANCH", targetId: "" } : t)} idPrefix="hrs" />}
-        <HoursEditor value={value} onChange={setValue} idPrefix="hrs" />
+        <HoursEditor value={value} onChange={setValue} idPrefix="hrs" withBrightness />
         {error && (
           <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-sm text-destructive">
             {error}

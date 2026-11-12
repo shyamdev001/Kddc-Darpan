@@ -165,7 +165,7 @@ export class SchedulesService {
         id: r.id,
         level: r.targetType,
         target: targetOf(r),
-        hours: { days: r.daysOfWeek, on: r.onTime, off: r.offTime, closedSaturdays: r.closedSaturdays },
+        hours: { days: r.daysOfWeek, on: r.onTime, off: r.offTime, closedSaturdays: r.closedSaturdays, brightness: r.brightness },
       }))
       .sort((a, b) => order[a.level] - order[b.level] || (a.target?.name ?? '').localeCompare(b.target?.name ?? ''));
   }
@@ -176,7 +176,7 @@ export class SchedulesService {
     if (dto) {
       if (dto.on === dto.off) throw new BadRequestException('On and off time are the same');
       const days = [...new Set(dto.days)].sort((a, b) => a - b);
-      hours = { days, on: dto.on, off: dto.off, closedSaturdays: [...new Set(dto.closedSaturdays)].sort() };
+      hours = { days, on: dto.on, off: dto.off, closedSaturdays: [...new Set(dto.closedSaturdays)].sort(), brightness: dto.brightness ?? null };
     }
     const where = { targetType: level, ...target.fields };
     const before = await this.prisma.displayHours.findFirst({ where });
@@ -184,14 +184,16 @@ export class SchedulesService {
       await tx.displayHours.deleteMany({ where });
       if (hours) {
         await tx.displayHours.create({
-          data: { ...where, daysOfWeek: hours.days, onTime: hours.on, offTime: hours.off, closedSaturdays: hours.closedSaturdays },
+          data: { ...where, daysOfWeek: hours.days, onTime: hours.on, offTime: hours.off, closedSaturdays: hours.closedSaturdays, brightness: hours.brightness ?? null },
         });
       }
     });
     await this.log(user, ip, 'display_hours.set', targetId ?? null, {
       level,
       target: target.name,
-      before: before ? { days: before.daysOfWeek, on: before.onTime, off: before.offTime, closedSaturdays: before.closedSaturdays } : null,
+      before: before
+        ? { days: before.daysOfWeek, on: before.onTime, off: before.offTime, closedSaturdays: before.closedSaturdays, brightness: before.brightness }
+        : null,
       after: hours,
     } as unknown as Prisma.InputJsonValue);
     await this.notify(target.screens);

@@ -73,6 +73,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private var playUploads: Job? = null
     private var link: DeviceLink? = null
     private var manifestVersion: String? = null
+    private var brightness: Int? = null // percent from the display hours; null = the TV's own
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -132,6 +133,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     override fun onResume() {
         super.onResume()
         Kiosk.enforce(this)
+        Brightness.apply(this, brightness) // again, in case it was changed during maintenance
     }
 
     override fun onStop() {
@@ -390,6 +392,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
         m.generatedAt?.let { parseIso(it) }?.let { TrustedClock.serverTime(it) }
         manifestVersion = m.version
         applyOrientation(m.settings.orientation == "PORTRAIT")
+        brightness = m.settings.hours?.brightness
+        Brightness.apply(this, brightness)
         playback.setManifest(m)
     }
 

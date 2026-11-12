@@ -34,7 +34,8 @@ export function describeSlot(slot: TimeSlot): string {
 const ORDINAL = ["", "1st", "2nd", "3rd", "4th", "5th"];
 
 export function describeHours(h: DisplayHoursValue): string {
-  const base = `${describeDays(h.days)}, ${time12(h.on)} to ${time12(h.off)}`;
+  const times = `${describeDays(h.days)}, ${time12(h.on)} to ${time12(h.off)}`;
+  const base = h.brightness != null ? `${times} at ${h.brightness}% brightness` : times;
   if (!h.closedSaturdays.length || (h.days.length && !h.days.includes(6))) return base;
   const which = h.closedSaturdays.map((n) => ORDINAL[n]);
   const list = which.length > 1 ? `${which.slice(0, -1).join(", ")} and ${which.at(-1)}` : which[0];
