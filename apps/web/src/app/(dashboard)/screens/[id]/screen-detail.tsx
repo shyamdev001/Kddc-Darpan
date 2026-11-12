@@ -25,6 +25,7 @@ import { PairScreenButton } from "../pair-screen-dialog";
 import { ScreenGlyph, ScreenStatusText } from "../screen-glyph";
 import { SOURCE_TEXT } from "../screen-list";
 import { describeHours, describeSlot } from "../../schedules/format";
+import { RemoteCard } from "./remote-card";
 
 const REFRESH_MS = 30_000;
 
@@ -340,6 +341,8 @@ function DeviceCard({ screen, ago }: { screen: ScreenDetail; ago: string | null 
           ))}
         </dl>
       </section>
+
+      <RemoteCard screen={screen} />
 
       <div className="rounded-xl border bg-card px-4 py-4 sm:px-5">
         <p className="text-sm text-muted-foreground">

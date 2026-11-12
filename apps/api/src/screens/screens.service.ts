@@ -15,6 +15,7 @@ import { Prisma } from '../generated/prisma/client';
 import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { newDeviceToken, newPairingCode } from './device-auth';
+import { CommandsService } from './commands.service';
 import { DevicesGateway } from './devices.gateway';
 import { PlaylistResolver, type ResolvedPlaylist } from './playlist-resolver.service';
 import type { ClaimScreenDto, RegisterDeviceDto, UpdateScreenDto } from './screen.dto';
@@ -41,6 +42,7 @@ export class ScreensService {
     private readonly resolver: PlaylistResolver,
     private readonly events: ContentEvents,
     private readonly gateway: DevicesGateway,
+    private readonly commands: CommandsService,
   ) {}
 
   // ---------- TV side ----------
@@ -257,6 +259,7 @@ export class ScreensService {
   /** Forgets the TV. Its token stops working; the app registers again and shows a new code. */
   async remove(id: string, user: AuthUser, ip?: string): Promise<void> {
     const s = await this.detail(id);
+    await this.commands.deleteScreenshots(id);
     await this.prisma.screen.delete({ where: { id } });
     this.gateway.disconnectScreen(id);
     await this.audit.log({

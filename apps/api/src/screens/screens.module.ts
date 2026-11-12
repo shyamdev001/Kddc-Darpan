@@ -7,11 +7,12 @@ import { ScreensController } from './screens.controller';
 import { ScreensService } from './screens.service';
 import { DeviceGuard } from './device-auth';
 import { DevicesGateway } from './devices.gateway';
+import { CommandsService } from './commands.service';
 
 @Module({
   imports: [MediaModule],
   controllers: [ScreensController, DevicesController],
-  providers: [ScreensService, ManifestService, PlaylistResolver, DeviceGuard, DevicesGateway],
+  providers: [ScreensService, ManifestService, PlaylistResolver, DeviceGuard, DevicesGateway, CommandsService],
   exports: [ManifestService, PlaylistResolver],
 })
 export class ScreensModule {}

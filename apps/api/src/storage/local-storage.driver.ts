@@ -1,4 +1,4 @@
-import { copyFile, mkdir, rename, rm, unlink } from 'fs/promises';
+import { copyFile, mkdir, rename, rm, rmdir, unlink } from 'fs/promises';
 import { dirname, join, resolve } from 'path';
 import { assertSafeKey, type StorageDriver } from './storage.types';
 
@@ -38,6 +38,9 @@ export class LocalStorageDriver implements StorageDriver {
   }
 
   async delete(key: string): Promise<void> {
-    await rm(this.abs(key), { force: true });
+    const path = this.abs(key);
+    await rm(path, { force: true });
+    // Drop the folder too if that was its last file (rmdir refuses non-empty folders).
+    if (key.includes('/')) await rmdir(dirname(path)).catch(() => undefined);
   }
 }

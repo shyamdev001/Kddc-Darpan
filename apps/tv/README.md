@@ -16,6 +16,8 @@ There is no Android Studio on the dev machine: GitHub Actions builds the APK
 6. Schedules run on the TV itself, in India time: it switches to a timed playlist when its slot starts and back
    when it ends, and shows a black screen outside display hours (letting the TV's own power saving take over).
    This keeps working offline. Schedule rules live in `Schedule.kt` and must match `packages/shared/src/schedule.ts`.
+7. Remote control from the screen's dashboard page: screenshot, reload, restart the app, clear downloaded
+   files. The TV replies on the socket (`command:ack`); a screenshot replies by uploading the image.
 
 ## Build settings (GitHub repository settings)
 | Name | Kind | Purpose |
@@ -44,5 +46,5 @@ pick KDCC Darpan and choose Always (or Settings > Apps > Default apps > Home app
 every power-on and Home returns to it. Kiosk mode (Device Owner) will lock this in Phase 2.
 
 ## Not yet (Phase 2)
-Kiosk / Device Owner mode, reliable auto-start on Android 10+, OTA updates, play logs, brightness,
-screenshots and other remote commands. Portrait TVs are rotated 90° clockwise; a flip option may be needed.
+Kiosk / Device Owner mode, OTA updates, play logs, brightness, emergency broadcast.
+Portrait TVs are rotated 90° clockwise; a flip option may be needed.

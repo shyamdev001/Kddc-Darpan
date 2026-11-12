@@ -1,6 +1,8 @@
 import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
+import { REMOTE_COMMANDS, type RemoteCommandType } from '@darpan/shared';
+
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().normalize('NFC') : value);
 const ORIENTATIONS = ['LANDSCAPE', 'PORTRAIT'] as const;
 
@@ -75,3 +77,8 @@ export class SetPlaylistDto {
   playlistId!: string | null;
 }
 
+
+export class SendCommandDto {
+  @IsIn(REMOTE_COMMANDS, { message: 'Unknown command' })
+  type!: RemoteCommandType;
+}

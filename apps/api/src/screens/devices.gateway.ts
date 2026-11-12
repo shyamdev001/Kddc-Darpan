@@ -10,8 +10,8 @@ import {
   type OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { SkipThrottle } from '@nestjs/throttler';
-import { DEVICE_NAMESPACE, type HeartbeatPayload } from '@darpan/shared';
-import { bufferTime, filter, type Subscription } from 'rxjs';
+import { DEVICE_NAMESPACE, type CommandAckPayload, type DeviceCommandPayload, type HeartbeatPayload } from '@darpan/shared';
+import { bufferTime, filter, Subject, type Subscription } from 'rxjs';
 import type { Namespace, Socket } from 'socket.io';
 import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
@@ -36,6 +36,9 @@ const shortText = (v: unknown, max: number) => (typeof v === 'string' && v.lengt
 export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DevicesGateway.name);
   private sub?: Subscription;
+
+  /** Command replies from TVs; CommandsService records them (kept here to avoid a circular dependency). */
+  readonly acks = new Subject<{ screenId: string; commandId: string; ok: boolean; error?: string }>();
 
   @WebSocketServer() private readonly ns!: Namespace;
 
@@ -136,6 +139,26 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       },
     });
     return { ok: true };
+  }
+
+  @SubscribeMessage('command:ack')
+  commandAck(@ConnectedSocket() socket: Socket, @MessageBody() body: Partial<CommandAckPayload> | undefined) {
+    const screenId = (socket.data as Partial<DeviceData>).screenId;
+    if (!screenId || typeof body !== 'object' || body === null) return { ok: false };
+    if (typeof body.commandId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.commandId)) return { ok: false };
+    this.acks.next({ screenId, commandId: body.commandId, ok: body.ok === true, error: shortText(body.error, 200) });
+    return { ok: true };
+  }
+
+  async isConnected(screenId: string): Promise<boolean> {
+    return (await this.ns.in(room(screenId)).fetchSockets()).length > 0;
+  }
+
+  /** Sends a command to a connected TV; false when it is not connected. */
+  async sendCommand(screenId: string, payload: DeviceCommandPayload): Promise<boolean> {
+    if (!(await this.isConnected(screenId))) return false;
+    this.ns.to(room(screenId)).emit('command', payload);
+    return true;
   }
 
   /** Forcibly disconnect a TV (it was removed from the dashboard). */

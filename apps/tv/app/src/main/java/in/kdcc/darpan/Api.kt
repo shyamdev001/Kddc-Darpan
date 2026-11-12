@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -39,6 +40,18 @@ class Api(private val prefs: Prefs) {
     suspend fun manifestRaw(): String = withContext(Dispatchers.IO) { call(authed("/api/devices/manifest")) }
 
     fun parseManifest(raw: String): Manifest = json.decodeFromString(Manifest.serializer(), raw)
+
+    /** Uploads a JPEG screenshot for a `screenshot` command. */
+    suspend fun uploadScreenshot(commandId: String, jpeg: ByteArray) = withContext(Dispatchers.IO) {
+        val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", "screen.jpg", jpeg.toRequestBody("image/jpeg".toMediaType()))
+            .build()
+        val req = Request.Builder().url(url("/api/devices/commands/$commandId/screenshot"))
+            .header("Authorization", "Bearer ${prefs.deviceToken ?: ""}")
+            .post(body)
+            .build()
+        call(req)
+    }
 
     /** True when `baseUrl` answers /api/health; used by the setup screen. */
     suspend fun checkHealth(baseUrl: String): Boolean = withContext(Dispatchers.IO) {

@@ -245,8 +245,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
         periodic = null
     }
 
-    /** Fetch the manifest, start showing it, then download anything missing. */
-    private suspend fun sync() = syncLock.withLock {
+    /** Fetch the manifest, start showing it, then download anything missing. True if the fetch worked. */
+    private suspend fun sync(): Boolean = syncLock.withLock {
         try {
             val raw = api.manifestRaw()
             val m = api.parseManifest(raw)
@@ -254,6 +254,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             applyManifest(m)
             withContext(Dispatchers.IO) { downloadAll(m) }
             link?.sendHeartbeat()
+            return@withLock true
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiException) {
@@ -268,6 +269,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         } catch (e: Exception) {
             Log.w(TAG, "Sync failed; still playing the last content", e)
         }
+        false
     }
 
     private suspend fun downloadAll(m: Manifest) {
@@ -339,15 +341,42 @@ class MainActivity : Activity(), DeviceLink.Listener {
         if (version != manifestVersion) scope.launch { sync() }
     }
 
-    override fun onCommand(type: String) {
+    override fun onCommand(commandId: String, type: String) {
+        val l = link
         when (type) {
-            "reload" -> scope.launch { sync() }
-            "restart" -> DarpanApp.restart(this)
+            "reload" -> scope.launch {
+                val ok = sync()
+                l?.sendAck(commandId, ok, if (ok) null else "Could not fetch the playlist from the server")
+            }
+            "restart" -> scope.launch {
+                l?.sendAck(commandId, true) // reply first: the restart cuts the connection
+                delay(800)
+                DarpanApp.restart(this@MainActivity)
+            }
             "clearCache" -> scope.launch {
                 withContext(Dispatchers.IO) { cache.clearAll() }
-                sync()
+                val ok = sync()
+                l?.sendAck(commandId, ok, if (ok) null else "Files cleared, but the new download could not start")
             }
-            else -> Log.i(TAG, "Command not supported yet: $type")
+            "screenshot" -> scope.launch {
+                val jpeg = Screenshot.capture(this@MainActivity)
+                if (jpeg == null) {
+                    l?.sendAck(commandId, false, "The TV could not read its screen")
+                    return@launch
+                }
+                try {
+                    api.uploadScreenshot(commandId, jpeg) // the server records the reply on upload
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Screenshot upload failed", e)
+                    l?.sendAck(commandId, false, "Upload failed: ${e.message ?: "network error"}")
+                }
+            }
+            else -> {
+                Log.i(TAG, "Command not supported: $type")
+                l?.sendAck(commandId, false, "This app version does not support \"$type\"")
+            }
         }
     }
 

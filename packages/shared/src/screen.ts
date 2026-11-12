@@ -85,3 +85,30 @@ export interface BranchOption extends BranchRef {
 /** A screen counts as online if it was heard from within this window. */
 export const ONLINE_WINDOW_MS = 3 * 60_000;
 export const PAIRING_CODE_TTL_MS = 30 * 60_000;
+
+/** Commands the dashboard can send to one TV. */
+export const REMOTE_COMMANDS = ['reload', 'restart', 'clearCache', 'screenshot'] as const;
+export type RemoteCommandType = (typeof REMOTE_COMMANDS)[number];
+
+/** POST /api/screens/:id/commands */
+export interface SendCommandRequest {
+  type: RemoteCommandType;
+}
+
+/**
+ * A command and what became of it. SENT with no reply after COMMAND_REPLY_SEC is shown as
+ * "no reply" (the TV went offline or runs an app version without this command).
+ */
+export interface ScreenCommandEntry {
+  id: string;
+  type: string;
+  status: 'PENDING' | 'SENT' | 'ACKED' | 'FAILED';
+  createdAt: string;
+  completedAt: string | null;
+  issuedBy: string | null;
+  error: string | null;
+  /** For a finished screenshot: where to load the image. */
+  screenshotUrl: string | null;
+}
+
+export const COMMAND_REPLY_SEC = 90;

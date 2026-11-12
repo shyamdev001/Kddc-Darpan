@@ -103,8 +103,17 @@ export interface ServerToDeviceEvents {
   command: (data: DeviceCommandPayload) => void;
 }
 
+/** TV -> server once a command is done (a screenshot is acknowledged by its upload instead). */
+export interface CommandAckPayload {
+  commandId: string;
+  ok: boolean;
+  /** Short reason when ok is false. */
+  error?: string;
+}
+
 export interface DeviceToServerEvents {
   heartbeat: (data: HeartbeatPayload) => void;
+  'command:ack': (data: CommandAckPayload) => void;
 }
 
 /** POST /api/devices/playlogs */

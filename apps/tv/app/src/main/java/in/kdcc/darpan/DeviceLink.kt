@@ -22,7 +22,8 @@ class DeviceLink(
 ) {
     interface Listener {
         fun onManifestUpdated(version: String)
-        fun onCommand(type: String)
+        /** A remote command; reply with [sendAck] (a screenshot replies by uploading). */
+        fun onCommand(commandId: String, type: String)
         /** The server no longer knows this token (screen removed or TV re-registered elsewhere). */
         fun onUnauthorized()
         /** The server closed the connection on purpose; check whether we are still allowed in. */
@@ -59,8 +60,10 @@ class DeviceLink(
             main.post { if (!closed) listener.onManifestUpdated(version) }
         })
         s.on("command", Emitter.Listener { args ->
-            val type = (args.firstOrNull() as? JSONObject)?.optString("type") ?: ""
-            main.post { if (!closed) listener.onCommand(type) }
+            val data = args.firstOrNull() as? JSONObject
+            val id = data?.optString("commandId") ?: ""
+            val type = data?.optString("type") ?: ""
+            main.post { if (!closed) listener.onCommand(id, type) }
         })
         s.on(Socket.EVENT_CONNECT_ERROR, Emitter.Listener { args ->
             val message = when (val a = args.firstOrNull()) {
@@ -102,6 +105,14 @@ class DeviceLink(
         } catch (e: Exception) {
             Log.w(TAG, "heartbeat failed", e)
         }
+    }
+
+    fun sendAck(commandId: String, ok: Boolean, error: String? = null) {
+        val s = socket ?: return
+        if (commandId.isEmpty() || !s.connected()) return
+        val body = JSONObject().put("commandId", commandId).put("ok", ok)
+        if (error != null) body.put("error", error.take(200))
+        s.emit("command:ack", body)
     }
 
     fun close() {
