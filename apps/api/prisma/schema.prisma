@@ -141,6 +141,7 @@ model Screen {
   displayHours DisplayHours[]
   commands     DeviceCommand[]
   playLogs     PlayLog[]
+  playDays     PlayDaily[]
   alerts       ScreenAlert[]
 
   @@index([branchId])
@@ -184,6 +185,7 @@ model Media {
   uploadedBy     User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   playlistItems  PlaylistItem[]
   playLogs       PlayLog[]
+  playDays       PlayDaily[]
   playingScreens Screen[]       @relation("ScreenCurrentMedia")
 
   @@index([status])
@@ -334,6 +336,29 @@ model PlayLog {
 
   @@unique([screenId, mediaId, startedAt]) // de-duplicate re-sent batches
   @@index([startedAt])
+}
+
+/// Proof of play per screen, ad and India date. Filled as play logs arrive; reports read this,
+/// not PlayLog (raw rows are pruned after 90 days). Names are copied in so the record survives
+/// a deleted screen or ad.
+model PlayDaily {
+  id         BigInt   @id @default(autoincrement())
+  day        DateTime @db.Date // date in Asia/Kolkata
+  screenId   String?  @db.Uuid
+  mediaId    String?  @db.Uuid
+  screenName String
+  branchName String?
+  mediaName  String
+  plays      Int
+  durationMs BigInt
+  updatedAt  DateTime @updatedAt
+
+  screen Screen? @relation(fields: [screenId], references: [id], onDelete: SetNull)
+  media  Media?  @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+
+  @@unique([day, screenId, mediaId])
+  @@index([mediaId, day])
+  @@index([screenId, day])
 }
 
 model DeviceCommand {

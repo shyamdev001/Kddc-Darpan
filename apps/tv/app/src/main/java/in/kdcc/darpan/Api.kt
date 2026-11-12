@@ -53,6 +53,15 @@ class Api(private val prefs: Prefs) {
         call(req)
     }
 
+    /** Proof of play: `body` is a ready-made {"entries":[...]} batch. */
+    suspend fun uploadPlayLogs(body: String) = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(url("/api/devices/playlogs"))
+            .header("Authorization", "Bearer ${prefs.deviceToken ?: ""}")
+            .post(body.toRequestBody(jsonType))
+            .build()
+        call(req)
+    }
+
     /** True when `baseUrl` answers /api/health; used by the setup screen. */
     suspend fun checkHealth(baseUrl: String): Boolean = withContext(Dispatchers.IO) {
         try {

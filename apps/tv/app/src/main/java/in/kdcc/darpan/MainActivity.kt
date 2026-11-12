@@ -51,6 +51,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var api: Api
     private lateinit var cache: MediaCache
     private lateinit var store: ManifestStore
+    private lateinit var plays: PlayLogStore
     private lateinit var playback: Playback
 
     private lateinit var root: FrameLayout
@@ -67,6 +68,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     private var flow: Job? = null
     private var periodic: Job? = null
+    private var playUploads: Job? = null
     private var link: DeviceLink? = null
     private var manifestVersion: String? = null
 
@@ -91,12 +93,14 @@ class MainActivity : Activity(), DeviceLink.Listener {
         api = Api(prefs)
         cache = MediaCache(filesDir, api.http, prefs)
         store = ManifestStore(filesDir)
+        plays = PlayLogStore(filesDir)
         playback = Playback(
             this,
             findViewById<ImageView>(R.id.imageA),
             findViewById<ImageView>(R.id.imageB),
             findViewById<PlayerView>(R.id.video),
             cache,
+            plays,
             scope,
             onState = { state -> onPlayState(state) },
             onIdleReason = { reason -> idleDetail.text = reason },
@@ -236,6 +240,39 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 delay(SYNC_EVERY_MS)
             }
         }
+        playUploads = scope.launch {
+            delay(PLAYLOG_FIRST_MS)
+            while (isActive) {
+                uploadPlays()
+                delay(PLAYLOG_EVERY_MS)
+            }
+        }
+    }
+
+    /** Sends saved play logs in batches; whatever fails stays saved for the next hour. */
+    private suspend fun uploadPlays() {
+        try {
+            while (true) {
+                val lines = withContext(Dispatchers.IO) { plays.pending(PLAYLOG_BATCH) }
+                if (lines.isEmpty()) return
+                // A line cut short by a power cut would spoil the batch; skip it.
+                val good = lines.filter { runCatching { JSONObject(it) }.isSuccess }
+                if (good.isNotEmpty()) {
+                    try {
+                        api.uploadPlayLogs("{\"entries\":[" + good.joinToString(",") + "]}")
+                    } catch (e: ApiException) {
+                        if (e.code != 400) throw e
+                        Log.w(TAG, "Server refused a play log batch; dropping it: ${e.message}")
+                    }
+                }
+                withContext(Dispatchers.IO) { plays.drop(lines.size) }
+                if (lines.size < PLAYLOG_BATCH) return
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Play log upload failed; will retry", e)
+        }
     }
 
     private fun stopLive() {
@@ -243,6 +280,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
         link = null
         periodic?.cancel()
         periodic = null
+        playUploads?.cancel()
+        playUploads = null
     }
 
     /** Fetch the manifest, start showing it, then download anything missing. True if the fetch worked. */
@@ -501,5 +540,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private companion object {
         const val TAG = "Darpan"
         const val SYNC_EVERY_MS = 10 * 60_000L
+        const val PLAYLOG_FIRST_MS = 2 * 60_000L
+        const val PLAYLOG_EVERY_MS = 60 * 60_000L
+        const val PLAYLOG_BATCH = 500
     }
 }

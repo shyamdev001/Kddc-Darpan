@@ -62,6 +62,8 @@ class Playback(
     private val imageB: ImageView,
     private val videoView: PlayerView,
     private val cache: MediaCache,
+    /** Records what was shown, for proof of play. */
+    private val plays: PlayLogStore,
     private val scope: CoroutineScope,
     private val onState: (PlayState) -> Unit,
     /** While nothing plays: a short plain-English reason, refreshed every few seconds. */
@@ -98,6 +100,7 @@ class Playback(
     }
 
     fun stop() {
+        plays.end()
         loop?.cancel()
         loop = null
         manifest = null
@@ -120,6 +123,7 @@ class Playback(
 
     /** Clears the screen to black (display hours ended). */
     private fun blank() {
+        plays.end()
         currentMediaId = null
         preloaded = null
         queueKey = null
@@ -205,6 +209,7 @@ class Playback(
             }
             val queue = queueNow(m, now)
             if (queue == null) {
+                if (currentMediaId != null) plays.end()
                 currentMediaId = null
                 setState(PlayState.NOTHING)
                 onIdleReason(idleReason(m, now))
@@ -258,6 +263,7 @@ class Playback(
             exo?.stop()
         }
         currentMediaId = item.mediaId
+        plays.start(item.mediaId)
 
         delay(FADE_MS)
         outgoing.setImageDrawable(null)
@@ -283,6 +289,7 @@ class Playback(
         videoView.visibility = View.VISIBLE
         player.play()
         currentMediaId = item.mediaId
+        plays.start(item.mediaId)
 
         // Play to the end, or stop at durationSec when the playlist trims the video.
         val limitMs = durationSec * 1000L + 1_500
@@ -307,6 +314,7 @@ class Playback(
         }
         if (result == false) {
             Log.w(TAG, "Video ${item.mediaId} failed to play; will download again")
+            plays.cancel()
             player.stop()
             videoView.visibility = View.GONE
             cache.discard(item)

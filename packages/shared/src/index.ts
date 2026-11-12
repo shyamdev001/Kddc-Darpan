@@ -6,3 +6,4 @@ export * from './screen';
 export * from './places';
 export * from './schedule';
 export * from './alerts';
+export * from './reports';
