@@ -14,7 +14,7 @@ export interface ResolvedPlaylist {
   slots: TimeSlot[];
 }
 
-interface ScreenPlace {
+export interface ScreenPlace {
   id: string;
   branchId: string | null;
   branch: { talukaId: string; taluka: { regionId: string } } | null;
@@ -23,7 +23,7 @@ interface ScreenPlace {
 type Target = { targetType: AssignmentTarget; screenId: string | null; branchId: string | null; talukaId: string | null; regionId: string | null };
 
 /** Does an assignment (or display-hours row) set at some level apply to this screen? */
-function appliesTo(a: Target, s: ScreenPlace, skipScreen: boolean): boolean {
+export function appliesTo(a: Target, s: ScreenPlace, skipScreen: boolean): boolean {
   if (a.targetType === 'SCREEN') return !skipScreen && a.screenId === s.id;
   if (s.branchId === null) return false; // a screen with no branch only follows its own settings
   switch (a.targetType) {
@@ -133,6 +133,18 @@ export class PlaylistResolver {
 
   async hours(screen: ScreenPlace) {
     return (await this.hoursMany([screen])).get(screen.id) ?? null;
+  }
+
+  /** The broadcast on each screen now: the newest running one that applies, whatever its level. */
+  async broadcastsMany(screens: ScreenPlace[], at = new Date()) {
+    const rows = await this.prisma.broadcast.findMany({
+      where: { endedAt: null, startedAt: { lte: at }, OR: [{ endsAt: null }, { endsAt: { gt: at } }] },
+      include: { media: true },
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+    });
+    const out = new Map<string, (typeof rows)[number] | null>();
+    for (const s of screens) out.set(s.id, rows.find((r) => appliesTo(r, s, false)) ?? null);
+    return out;
   }
 }
 

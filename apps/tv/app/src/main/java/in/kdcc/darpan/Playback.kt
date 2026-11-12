@@ -42,6 +42,9 @@ enum class PlayState {
 
     /** Stopped (pairing, signed out). */
     STOPPED,
+
+    /** A broadcast from head office has the screen; the playlists wait. */
+    BROADCAST,
 }
 
 /** One step of the loop: a verified file and how long it stays up. */
@@ -94,12 +97,37 @@ class Playback(
         minSide = minOf(dm.widthPixels, dm.heightPixels)
     }
 
+    /** True while a broadcast has the screen. */
+    private var held = false
+
     fun setManifest(m: Manifest) {
         manifest = m
-        if (loop?.isActive != true) loop = scope.launch { run() }
+        if (!held && loop?.isActive != true) loop = scope.launch { run() }
+    }
+
+    /**
+     * Gives the screen to a broadcast (true) or takes it back (false). While held, the player is
+     * released so only one ExoPlayer exists at a time on these low-memory TVs.
+     */
+    fun hold(on: Boolean) {
+        if (on == held) return
+        held = on
+        if (on) {
+            loop?.cancel()
+            loop = null
+            blank()
+            videoView.player = null
+            exo?.release()
+            exo = null
+            setState(PlayState.BROADCAST)
+        } else {
+            position = -1
+            if (manifest != null) loop = scope.launch { run() }
+        }
     }
 
     fun stop() {
+        held = false
         plays.end()
         loop?.cancel()
         loop = null

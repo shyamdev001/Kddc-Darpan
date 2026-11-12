@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { UserRole } from "@darpan/shared";
-import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay, PackageCheck, ScrollText, UsersRound } from "lucide-react";
+import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay, PackageCheck, Radio, ScrollText, UsersRound } from "lucide-react";
 import { canOpen } from "@/components/session-context";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ const items = [
   { href: "/media", label: "Media", icon: Images },
   { href: "/playlists", label: "Playlists", icon: ListVideo },
   { href: "/schedules", label: "Schedules", icon: CalendarClock },
+  { href: "/broadcast", label: "Broadcast", icon: Radio },
   { href: "/branches", label: "Branches", icon: Building2 },
   { href: "/reports", label: "Proof of play", icon: BarChart3 },
   { href: "/alerts", label: "Alerts", icon: BellRing },

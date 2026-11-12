@@ -55,6 +55,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var plays: PlayLogStore
     private lateinit var updater: Updater
     private lateinit var playback: Playback
+    private lateinit var broadcasts: BroadcastPlayer
 
     private lateinit var root: FrameLayout
     private lateinit var stage: FrameLayout
@@ -108,6 +109,15 @@ class MainActivity : Activity(), DeviceLink.Listener {
             scope,
             onState = { state -> onPlayState(state) },
             onIdleReason = { reason -> idleDetail.text = reason },
+        )
+        broadcasts = BroadcastPlayer(
+            this,
+            stage,
+            cache,
+            prefs,
+            scope,
+            onEnded = { playback.hold(false) },
+            onStatus = { link?.sendHeartbeat() },
         )
 
         findViewById<Button>(R.id.changeServer).setOnClickListener { showSetup(null) }
@@ -208,6 +218,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     override fun onDestroy() {
         stopLive()
+        broadcasts.stop()
         playback.release()
         scope.cancel()
         super.onDestroy()
@@ -236,6 +247,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     private suspend fun pair() {
         stopLive()
+        broadcasts.stop()
         playback.stop()
         showPairing(null, getString(R.string.pair_waiting))
         var backoff = 5_000L
@@ -367,7 +379,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     private suspend fun downloadAll(m: Manifest) {
-        for (item in m.items.distinctBy { it.sha256 }) {
+        // A broadcast's poster or video first: it is what the screen is waiting to show.
+        val files = listOfNotNull(m.broadcast?.media) + m.items
+        for (item in files.distinctBy { it.sha256 }) {
             if (cache.has(item)) continue
             for (attempt in 1..3) {
                 val done = try {
@@ -384,7 +398,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 delay(3_000L * attempt)
             }
         }
-        cache.cleanup(m.items.map { it.sha256 }.toSet())
+        cache.cleanup(files.map { it.sha256 }.toSet())
     }
 
     private fun applyManifest(m: Manifest) {
@@ -394,7 +408,10 @@ class MainActivity : Activity(), DeviceLink.Listener {
         applyOrientation(m.settings.orientation == "PORTRAIT")
         brightness = m.settings.hours?.brightness
         Brightness.apply(this, brightness)
+        // A broadcast takes the screen before the playlists can start again.
+        playback.hold(broadcasts.isLive(m.broadcast))
         playback.setManifest(m)
+        broadcasts.show(m.broadcast)
     }
 
     /**
@@ -525,6 +542,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("updateStatus", updater.status ?: JSONObject.NULL)
             .put("kiosk", Kiosk.state(this))
             .put("kioskUntil", Kiosk.maintenanceEndsAt(this)?.let { iso(it) } ?: JSONObject.NULL)
+            .put("broadcastId", broadcasts.currentId ?: JSONObject.NULL)
+            .put("broadcastStatus", broadcasts.status ?: JSONObject.NULL)
     }
 
     // ---------- Screens ----------

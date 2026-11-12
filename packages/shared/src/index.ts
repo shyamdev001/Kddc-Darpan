@@ -11,3 +11,4 @@ export * from './releases';
 export * from './users';
 export * from './activity';
 export * from './two-factor';
+export * from './broadcast';

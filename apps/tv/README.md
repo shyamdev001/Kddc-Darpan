@@ -95,6 +95,14 @@ applies it in two ways: the system brightness (kiosk TVs on Android 9 or newer; 
 put back when brightness is turned off again) and the app's own window brightness. Many TVs drive the
 backlight from their picture settings and ignore one or both, so check it on the real TV.
 
+## Broadcast
+Dashboard > Broadcast takes over screens at once until it is stopped or its time is up, even outside
+display hours: a full-screen message, a poster or video from Media, or a live link. YouTube links play
+in YouTube's own player (a WebView made only for the broadcast; needs an up-to-date Android System
+WebView and internet at the branch). Direct .m3u8 / .mp4 links play in ExoPlayer. Broadcasts play with
+sound unless "Sound off" is ticked. The dashboard shows how many screens are showing it, and why a
+screen could not (for example a YouTube video whose owner does not allow embedding).
+
 ## Not yet
-Emergency broadcast.
+Nothing planned for Phase 2.
 Portrait TVs are rotated 90° clockwise; a flip option may be needed.

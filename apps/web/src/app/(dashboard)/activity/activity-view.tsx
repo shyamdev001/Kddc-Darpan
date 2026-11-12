@@ -55,6 +55,8 @@ const ACTION_TEXT: Record<string, string> = {
   "schedule.update": "Changed a timed playlist",
   "schedule.remove": "Removed a timed playlist",
   "display_hours.set": "Set screen on/off hours",
+  "broadcast.start": "Started a broadcast",
+  "broadcast.stop": "Stopped a broadcast",
   "alert_settings.update": "Changed alert settings",
   "alert_settings.test_email": "Sent a test alert email",
   "release.upload": "Uploaded an app version",

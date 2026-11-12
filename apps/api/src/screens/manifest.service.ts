@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Manifest, ManifestApp, ManifestItem, ManifestPlaylist, ManifestSettings } from '@darpan/shared';
+import { youtubeId, type Manifest, type ManifestApp, type ManifestBroadcast, type ManifestItem, type ManifestPlaylist, type ManifestSettings } from '@darpan/shared';
 import { createHash } from 'node:crypto';
+import type { Prisma } from '../generated/prisma/client';
 import { effectiveSeconds } from '../playlists/playlists.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlaylistResolver, screenPlaceSelect } from './playlist-resolver.service';
@@ -27,7 +28,11 @@ export class ManifestService {
     if (!screen) throw new NotFoundException();
 
     const now = new Date();
-    const [layers, hours] = await Promise.all([this.resolver.layers(screen, false, now), this.resolver.hours(screen)]);
+    const [layers, hours, broadcasts] = await Promise.all([
+      this.resolver.layers(screen, false, now),
+      this.resolver.hours(screen),
+      this.resolver.broadcastsMany([screen], now),
+    ]);
 
     const ids = [...new Set(layers.map((l) => l.playlistId))];
     const rows = await this.prisma.playlist.findMany({
@@ -70,9 +75,10 @@ export class ManifestService {
     const items = [...media.values()];
     const settings: ManifestSettings = { orientation: screen.orientation, hours: hours?.hours ?? null };
     const app = await this.appOffer(screen.testUpdates);
+    const broadcast = toManifestBroadcast(broadcasts.get(screen.id) ?? null);
     // The version only changes when what the TV must do changes, so it can skip identical manifests.
-    const version = createHash('sha256').update(JSON.stringify({ items, playlists, settings, app })).digest('hex').slice(0, 16);
-    return { version, generatedAt: now.toISOString(), items, playlists, settings, app };
+    const version = createHash('sha256').update(JSON.stringify({ items, playlists, settings, app, broadcast })).digest('hex').slice(0, 16);
+    return { version, generatedAt: now.toISOString(), items, playlists, settings, app, broadcast };
   }
 
   /** The newest app build offered to this screen: released to all, or in test and this is a test screen. */
@@ -90,4 +96,35 @@ export class ManifestService {
       size: Number(r.sizeBytes),
     };
   }
+}
+
+type BroadcastRow = Prisma.BroadcastGetPayload<{ include: { media: true } }>;
+
+function toManifestBroadcast(b: BroadcastRow | null): ManifestBroadcast | null {
+  if (!b) return null;
+  const m = b.media;
+  const media: ManifestItem | null =
+    b.kind === 'MEDIA' && m && m.status === 'READY' && m.storageKey && m.sha256
+      ? {
+          mediaId: m.id,
+          url: `${publicBase()}/api/devices/media/${m.id}`,
+          sha256: m.sha256,
+          size: Number(m.sizeBytes ?? 0),
+          type: m.type,
+          durationSec: m.durationSec ?? 10,
+          validFrom: null,
+          validUntil: null,
+        }
+      : null;
+  const ytId = b.kind === 'LINK' && b.url ? (b.youtubeId ?? youtubeId(b.url)) : null;
+  return {
+    id: b.id,
+    kind: b.kind,
+    title: b.title,
+    message: b.message,
+    media,
+    link: b.kind !== 'LINK' || !b.url ? null : ytId ? { type: 'youtube', youtubeId: ytId } : { type: 'stream', url: b.url },
+    muted: b.muted,
+    endsAt: b.endsAt?.toISOString() ?? null,
+  };
 }

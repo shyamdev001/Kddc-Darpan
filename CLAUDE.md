@@ -89,6 +89,8 @@ kdcc-signage/
 
 ## TV app constraints
 - ~1.76 GB RAM: one ExoPlayer instance, preload next item only, no heavy libraries, no WebView playback.
+  Exception (approved by the user): a YouTube broadcast plays in a WebView, created only while the
+  broadcast runs and destroyed after; the playlist player is released meanwhile.
 - Images shown via a lightweight ImageView with crossfade; videos via ExoPlayer.
 - Must auto-start on boot and relaunch itself if it crashes.
 - Android version of TVs not yet confirmed — set minSdk conservatively (23) until checked.

@@ -95,6 +95,28 @@ data class Manifest(
     val settings: ManifestSettings = ManifestSettings(),
     /** A newer app build offered to this TV, if any. */
     val app: ManifestApp? = null,
+    /** Shown instead of the playlists until it ends. */
+    val broadcast: ManifestBroadcast? = null,
+)
+
+/** An urgent message, poster or video, or live stream from head office. */
+@Serializable
+data class ManifestBroadcast(
+    val id: String,
+    val kind: String, // MESSAGE | MEDIA | LINK
+    val title: String? = null,
+    val message: String? = null,
+    val media: ManifestItem? = null,
+    val link: BroadcastLink? = null,
+    val muted: Boolean = false,
+    val endsAt: String? = null, // ISO; null = until stopped
+)
+
+@Serializable
+data class BroadcastLink(
+    val type: String, // youtube | stream
+    val youtubeId: String? = null,
+    val url: String? = null,
 )
 
 @Serializable

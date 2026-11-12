@@ -140,6 +140,13 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
           ? { appVersionCode: body.appVersionCode }
           : {}),
         ...('updateStatus' in body ? { updateStatus: shortText(body.updateStatus, 200) ?? null } : {}),
+        // Older app versions send no broadcast fields: leave what we had.
+        ...('broadcastId' in body
+          ? {
+              broadcastId: typeof body.broadcastId === 'string' && /^[0-9a-f-]{36}$/i.test(body.broadcastId) ? body.broadcastId : null,
+              broadcastStatus: shortText(body.broadcastStatus, 200) ?? null,
+            }
+          : {}),
         // Older app versions send no kiosk fields: leave what we had.
         ...(typeof body.kiosk === 'string' && (KIOSK_STATES as readonly string[]).includes(body.kiosk)
           ? { kioskState: body.kiosk, kioskUntil: kioskUntil(body.kiosk, body.kioskUntil) }

@@ -15,6 +15,7 @@ import { PlacesModule } from './places/places.module';
 import { PlaylistsModule } from './playlists/playlists.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SchedulesModule } from './schedules/schedules.module';
+import { BroadcastsModule } from './broadcasts/broadcasts.module';
 import { ScreensModule } from './screens/screens.module';
 import { StatsController } from './stats/stats.controller';
 import { StorageModule } from './storage/storage.module';
@@ -33,6 +34,7 @@ import { StorageModule } from './storage/storage.module';
     ScreensModule,
     PlacesModule,
     SchedulesModule,
+    BroadcastsModule,
     MailModule,
     AlertsModule,
     ReportsModule,

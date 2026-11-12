@@ -30,7 +30,7 @@ export function useCanEdit(): boolean {
 }
 
 /** Pages only head office uses; the API refuses them too. */
-const EDIT_ONLY = ["/media", "/playlists", "/schedules", "/branches", "/updates"];
+const EDIT_ONLY = ["/media", "/playlists", "/schedules", "/broadcast", "/branches", "/updates"];
 const SUPER_ONLY = ["/users", "/activity"];
 
 export function canOpen(pathname: string, role: UserRole): boolean {

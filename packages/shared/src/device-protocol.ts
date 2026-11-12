@@ -1,3 +1,4 @@
+import type { ManifestBroadcast } from './broadcast';
 import type { DisplayHoursValue, TimeSlot } from './schedule';
 // Contract between the API and the Android TV app.
 // The Kotlin side mirrors these shapes with kotlinx.serialization.
@@ -70,6 +71,8 @@ export interface Manifest {
   settings: ManifestSettings;
   /** Newer TV app to install, if one is offered to this screen; TVs on that version or newer ignore it. */
   app?: ManifestApp | null;
+  /** Shown instead of the playlists (even outside display hours) until it ends. */
+  broadcast?: ManifestBroadcast | null;
 }
 
 /** A TV app build (APK) in the manifest. Download with the device token, check sha256, install. */
@@ -101,6 +104,9 @@ export interface HeartbeatPayload {
   appVersionCode?: number;
   /** Last word on an app update ("Downloading 0.1.9", "Failed: ..."); null when idle */
   updateStatus?: string | null;
+  /** The broadcast on screen and how it is going ('playing', 'loading', 'error: ...'); null when none. */
+  broadcastId?: string | null;
+  broadcastStatus?: string | null;
 }
 
 export type DeviceCommandType =
