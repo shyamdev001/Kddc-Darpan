@@ -23,7 +23,11 @@ import { StorageModule } from './storage/storage.module';
 @Module({
   imports: [
     // Generous global limit; sensitive routes (login) set a tighter @Throttle.
-    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 300 }]),
+    // The automated tests sign in many times a minute from one address, so they switch it off.
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 300 }],
+      skipIf: () => process.env.NODE_ENV === 'test',
+    }),
     PrismaModule,
     EventsModule,
     AuditModule,

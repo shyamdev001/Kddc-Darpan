@@ -127,4 +127,7 @@ kdcc-signage/
 - All times stored in UTC; schedules evaluated in Asia/Kolkata.
 - Every dashboard change that affects screens writes an AuditLog row.
 - Keep the TV app small and boring. Reliability over features.
+- Tests: `npm test` at the repo root (Node's built-in test runner, no extra libraries). They run on the
+  separate database `darpan_test`, created automatically, and refuse any database not ending in `_test`.
+  GitHub Actions (`ci.yml`) runs them plus type checks and lint on every push. Add a test with each feature.
 - Ask the user before adding any new paid service or heavy dependency.

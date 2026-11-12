@@ -11,7 +11,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test": "node -e \"require('fs').rmSync('dist-test',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node dist-test/test/prepare-db.js && node --test --test-concurrency=1 --test-reporter=spec \"dist-test/test/**/*.test.js\""
   },
   "dependencies": {
     "@nestjs/common": "^12.4.0",

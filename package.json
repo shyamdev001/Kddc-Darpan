@@ -13,7 +13,8 @@
     "build": "npm run build -w @darpan/shared && npm run build -w @darpan/api && npm run build -w @darpan/web",
     "db:migrate": "npm run db:migrate -w @darpan/api",
     "db:seed": "npm run db:seed -w @darpan/api",
-    "db:studio": "npm run db:studio -w @darpan/api"
+    "db:studio": "npm run db:studio -w @darpan/api",
+    "test": "npm run build -w @darpan/shared && npm test -w @darpan/api"
   },
   "engines": {
     "node": ">=20"

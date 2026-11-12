@@ -1,0 +1,76 @@
+name: API and dashboard checks
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "apps/tv/**"
+      - "**/*.md"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Throwaway database for the API tests. Nothing real is ever in it.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: darpan_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/darpan_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/darpan_test
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Shared types
+        run: npm run build -w @darpan/shared
+
+      - name: Prisma client
+        working-directory: apps/api
+        run: npx prisma generate
+
+      - name: API type check
+        working-directory: apps/api
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: API tests
+        run: npm test -w @darpan/api
+
+      - name: Dashboard type check
+        working-directory: apps/web
+        run: |
+          npx next typegen
+          npx tsc --noEmit
+
+      - name: Dashboard lint
+        run: npm run lint -w @darpan/web
