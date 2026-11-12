@@ -21,6 +21,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -118,6 +119,60 @@ class MainActivity : Activity(), DeviceLink.Listener {
         }
 
         if (prefs.serverUrl.isBlank()) showSetup(null) else begin()
+        scope.launch { kioskLoop() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        visible = true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Kiosk.enforce(this)
+    }
+
+    override fun onStop() {
+        visible = false
+        super.onStop()
+    }
+
+    /** Ends maintenance on time and keeps the app pinned; tells the dashboard when the state changes. */
+    private suspend fun kioskLoop() {
+        var last = Kiosk.state(this)
+        while (scope.isActive) {
+            delay(30_000)
+            if (Kiosk.isOwner(this) && !Kiosk.inMaintenance(this)) {
+                if (visible) Kiosk.enforce(this) else Kiosk.bringToFront(this)
+            }
+            val now = Kiosk.state(this)
+            if (now != last) {
+                last = now
+                link?.sendHeartbeat()
+            }
+        }
+    }
+
+    /**
+     * The TV's own settings (Wi-Fi, display). In kiosk mode they open only during maintenance:
+     * started from the dashboard, or right here when the TV cannot reach the server (a changed
+     * Wi-Fi password must be fixable at the branch).
+     */
+    private fun openTvSettings() {
+        if (Kiosk.isOwner(this) && !Kiosk.inMaintenance(this)) {
+            if (link?.connected == true) {
+                Toast.makeText(this, getString(R.string.kiosk_locked), Toast.LENGTH_LONG).show()
+                return
+            }
+            Kiosk.startMaintenance(this)
+            link?.sendHeartbeat()
+            Toast.makeText(this, getString(R.string.kiosk_offline_unlock), Toast.LENGTH_LONG).show()
+        }
+        try {
+            startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) {
+            Log.w(TAG, "No settings screen on this TV", e)
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -138,14 +193,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
             if (pairPanel.visibility == View.VISIBLE) {
                 // Before pairing: server setup.
                 showSetup(null)
-            } else if (setupPanel.visibility != View.VISIBLE) {
-                // While live: the TV's own settings (Wi-Fi, home app). With Darpan as the home app,
-                // this is the way out to the rest of the TV until kiosk mode locks it down.
-                try {
-                    startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                } catch (e: Exception) {
-                    Log.w(TAG, "No settings screen on this TV", e)
-                }
+            } else {
+                // On the server screen or while live: the TV's own settings (Wi-Fi, display).
+                openTvSettings()
             }
             return true
         }
@@ -412,6 +462,16 @@ class MainActivity : Activity(), DeviceLink.Listener {
                     l?.sendAck(commandId, false, "Upload failed: ${e.message ?: "network error"}")
                 }
             }
+            "kioskUnlock" -> {
+                val ok = Kiosk.startMaintenance(this)
+                l?.sendAck(commandId, ok, if (ok) null else "Kiosk mode is not set up on this TV")
+                l?.sendHeartbeat()
+            }
+            "kioskLock" -> {
+                val ok = Kiosk.endMaintenance(this)
+                l?.sendAck(commandId, ok, if (ok) null else "Kiosk mode is not set up on this TV")
+                l?.sendHeartbeat()
+            }
             else -> {
                 Log.i(TAG, "Command not supported: $type")
                 l?.sendAck(commandId, false, "This app version does not support \"$type\"")
@@ -454,6 +514,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("ramTotalBytes", mem.totalMem)
             .put("appVersion", BuildConfig.VERSION_NAME)
             .put("manifestVersion", manifestVersion ?: "")
+            .put("kiosk", Kiosk.state(this))
+            .put("kioskUntil", Kiosk.maintenanceEndsAt(this)?.let { iso(it) } ?: JSONObject.NULL)
     }
 
     // ---------- Screens ----------
@@ -537,11 +599,19 @@ class MainActivity : Activity(), DeviceLink.Listener {
             )
     }
 
-    private companion object {
-        const val TAG = "Darpan"
-        const val SYNC_EVERY_MS = 10 * 60_000L
-        const val PLAYLOG_FIRST_MS = 2 * 60_000L
-        const val PLAYLOG_EVERY_MS = 60 * 60_000L
-        const val PLAYLOG_BATCH = 500
+    private fun iso(ms: Long): String =
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(ms)
+
+    companion object {
+        /** True while the activity is on screen; read by the watchdog. */
+        @Volatile
+        var visible = false
+            private set
+
+        private const val TAG = "Darpan"
+        private const val SYNC_EVERY_MS = 10 * 60_000L
+        private const val PLAYLOG_FIRST_MS = 2 * 60_000L
+        private const val PLAYLOG_EVERY_MS = 60 * 60_000L
+        private const val PLAYLOG_BATCH = 500
     }
 }

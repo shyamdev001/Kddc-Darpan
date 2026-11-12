@@ -82,6 +82,10 @@ export interface HeartbeatPayload {
   ramTotalBytes?: number;
   /** manifest version the TV is playing, so the dashboard can tell when it is up to date */
   manifestVersion?: string;
+  /** Kiosk mode: 'off' | 'locked' | 'maintenance' (see KIOSK_STATES) */
+  kiosk?: string;
+  /** ISO time maintenance ends, or null */
+  kioskUntil?: string | null;
 }
 
 export type DeviceCommandType =
@@ -89,6 +93,8 @@ export type DeviceCommandType =
   | 'reload'
   | 'screenshot'
   | 'clearCache'
+  | 'kioskUnlock'
+  | 'kioskLock'
   | 'emergency:show'
   | 'emergency:clear';
 

@@ -20,6 +20,8 @@ There is no Android Studio on the dev machine: GitHub Actions builds the APK
    files. The TV replies on the socket (`command:ack`); a screenshot replies by uploading the image.
 8. Proof of play: every poster or video shown is saved to a small file on the TV (kept while offline)
    and uploaded every hour to `POST /api/devices/playlogs`. The dashboard's Proof of play page reads it.
+9. Kiosk mode when the app is the TV's device owner (setup below): pinned to Darpan, a watchdog, and a
+   15-minute maintenance unlock from the dashboard (`kioskUnlock` / `kioskLock` commands).
 
 ## Build settings (GitHub repository settings)
 | Name | Kind | Purpose |
@@ -40,13 +42,47 @@ Or copy the APK to a USB stick and open it with the TV's file manager (allow unk
 
 ## On the TV remote
 - While the pairing code is shown: **Change server** button (or the Menu key) opens the server address screen.
-- Back is ignored while content is playing. Menu while playing opens the TV's own Settings.
+- Back is ignored while content is playing. Menu while playing opens the TV's own Settings
+  (in kiosk mode only while unlocked, see below).
 
 ## Start on power-on
 Android 10+ does not let apps open themselves at boot. Make KDCC Darpan the TV's home app: press Home,
 pick KDCC Darpan and choose Always (or Settings > Apps > Default apps > Home app). It then opens at
-every power-on and Home returns to it. Kiosk mode (Device Owner) will lock this in Phase 2.
+every power-on and Home returns to it. Kiosk mode (below) sets this for you.
+
+## Kiosk mode (device owner)
+Once the app is the TV's **device owner**, it locks the TV to Darpan: it is pinned on screen (Home,
+Recents and the notification shade do nothing), it is always the home app so it opens at power-on, and a
+watchdog brings it back within about 2 minutes if anything closes it. Without this step the app works as
+before; the dashboard shows "Kiosk mode is not set up" on the screen's page.
+
+Set it up once per TV, after a factory reset and before signing in to any account:
+1. Factory reset the TV. In the setup wizard connect to Wi-Fi (or LAN) but **skip every account sign-in**
+   (Google, Mi). Device owner cannot be set while any account exists on the TV.
+2. Turn on developer options: Settings > About (or Device preferences > About) > press Build 7 times.
+   Then in Developer options turn on USB debugging (and Network/ADB debugging, if you connect over the LAN).
+3. Install the APK and set the owner from the laptop (adb is in Android platform-tools):
+   ```
+   adb connect <tv-ip>:5555
+   adb install -r kdcc-darpan.apk
+   adb shell dpm set-device-owner in.kdcc.darpan/.AdminReceiver
+   ```
+   The last line should print `Success: Device owner set ...`. If it says there are already accounts or
+   users on the device, remove them (or reset again) and retry.
+4. Open KDCC Darpan once (or restart the TV). It locks itself; you can turn developer options off again.
+
+Maintenance (Wi-Fi changes, display settings):
+- From the dashboard: Screens > the screen > Remote control > **Unlock for 15 min**. Menu then opens the TV's
+  settings. It locks again by itself after 15 minutes, or at once with **Lock now**.
+- At the branch, when the TV cannot reach the server (for example the Wi-Fi password changed), the Menu key
+  unlocks the settings for 15 minutes on the spot, so it can be fixed without the dashboard.
+
+Notes:
+- App updates must be signed with the same key (the GitHub signing secrets); a differently signed APK
+  cannot replace a device-owner app.
+- A TV has only one device owner. TVs still running the old vendor kiosk app need a factory reset first.
+- To take kiosk mode off a TV, factory reset it.
 
 ## Not yet (Phase 2)
-Kiosk / Device Owner mode, OTA updates, brightness, emergency broadcast.
+OTA updates, brightness, emergency broadcast.
 Portrait TVs are rotated 90° clockwise; a flip option may be needed.

@@ -129,6 +129,8 @@ model Screen {
   ramTotalMb      Int?
   currentMediaId  String?   @db.Uuid
   manifestVersion String?
+  kioskState      String? // off | locked | maintenance, from the heartbeat
+  kioskUntil      DateTime? // maintenance ends
   lastSeenAt      DateTime?
   ipAddress       String?
 
@@ -364,7 +366,7 @@ model PlayDaily {
 model DeviceCommand {
   id          String        @id @default(uuid()) @db.Uuid
   screenId    String        @db.Uuid
-  type        String // restart | reload | screenshot | clearCache | emergency:show | emergency:clear
+  type        String // restart | reload | screenshot | clearCache | kioskUnlock | kioskLock | emergency:show | emergency:clear
   params      Json?
   status      CommandStatus @default(PENDING)
   result      Json?

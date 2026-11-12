@@ -10,4 +10,6 @@
     <string name="setup_hint">Type the address of the Darpan server, for example http://10.0.0.5:4000</string>
     <string name="setup_connect">Connect</string>
     <string name="idle_message">No content to show yet</string>
+    <string name="kiosk_locked">This TV is locked. To change its settings, unlock it from the dashboard: Screens, this screen, Remote control.</string>
+    <string name="kiosk_offline_unlock">Cannot reach the server, so settings are unlocked for 15 minutes.</string>
 </resources>

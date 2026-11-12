@@ -1,9 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  KIOSK_STATES,
   ONLINE_WINDOW_MS,
   PAIRING_CODE_TTL_MS,
   type BranchOption,
   type DeviceStatusResponse,
+  type KioskState,
   type RegisterDeviceResponse,
   type ScreenDetail,
   type ScreenListResponse,
@@ -166,6 +168,8 @@ export class ScreensService {
       ramFreeMb: s.ramFreeMb,
       ramTotalMb: s.ramTotalMb,
       manifestVersion: s.manifestVersion,
+      kiosk: isKiosk(s.kioskState) ? s.kioskState : null,
+      kioskUntil: s.kioskUntil?.toISOString() ?? null,
       pairedAt: s.pairedAt?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
       ownPlaylistId: s.assignments[0]?.playlistId ?? null,
@@ -306,4 +310,8 @@ export class ScreensService {
       nowPlaying: s.currentMedia,
     };
   }
+}
+
+function isKiosk(v: string | null): v is KioskState {
+  return v !== null && (KIOSK_STATES as readonly string[]).includes(v);
 }

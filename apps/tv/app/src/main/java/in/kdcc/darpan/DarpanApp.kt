@@ -12,6 +12,7 @@ class DarpanApp : Application() {
     override fun onCreate() {
         super.onCreate()
         TrustedClock.init(this)
+        WatchdogReceiver.schedule(this)
         // If anything crashes, come back in a few seconds instead of leaving a branch TV on the home screen.
         Thread.setDefaultUncaughtExceptionHandler { _, error ->
             Log.e("DarpanApp", "Crashed; restarting", error)

@@ -93,6 +93,9 @@ class DeviceLink(
         main.postDelayed(beat, HEARTBEAT_MS)
     }
 
+    /** True while the socket to the server is up. */
+    val connected: Boolean get() = socket?.connected() == true
+
     fun reconnect() {
         socket?.let { if (!it.connected()) it.connect() }
     }

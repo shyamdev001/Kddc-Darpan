@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { RemoteCommandType, ScreenCommandEntry, ScreenDetail } from "@darpan/shared";
-import { Camera, Eraser, Loader2, Power, RefreshCw } from "lucide-react";
+import { KIOSK_MAINTENANCE_MIN, type KioskState, type RemoteCommandType, type ScreenCommandEntry, type ScreenDetail } from "@darpan/shared";
+import { Camera, Eraser, Loader2, Lock, LockOpen, Power, RefreshCw } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -21,7 +21,26 @@ const LABEL: Record<string, string> = {
   restart: "Restart app",
   clearCache: "Clear downloaded files",
   screenshot: "Screenshot",
+  kioskUnlock: "Unlock for maintenance",
+  kioskLock: "Lock",
 };
+
+const TIME = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+
+/**
+ * Kiosk state to show. The screen record follows the TV's heartbeat (refreshed every half minute),
+ * so a lock or unlock the TV confirmed in the last two minutes wins until the record catches up.
+ */
+function kioskNow(screen: ScreenDetail, list: ScreenCommandEntry[] | null, now: number): { state: KioskState | null; until: string | null } {
+  const recent = list?.find((c) => (c.type === "kioskUnlock" || c.type === "kioskLock") && c.status === "ACKED");
+  const doneAt = recent?.completedAt ? new Date(recent.completedAt).getTime() : 0;
+  if (recent && screen.kiosk !== "off" && now - doneAt < 2 * 60_000) {
+    return recent.type === "kioskUnlock"
+      ? { state: "maintenance", until: new Date(doneAt + KIOSK_MAINTENANCE_MIN * 60_000).toISOString() }
+      : { state: "locked", until: null };
+  }
+  return { state: screen.kiosk, until: screen.kioskUntil };
+}
 
 const ACTIONS: { type: RemoteCommandType; icon: typeof RefreshCw; text: string; hint: string }[] = [
   { type: "screenshot", icon: Camera, text: "Take screenshot", hint: "See what the TV shows right now" },
@@ -78,6 +97,8 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
   const shot = list?.find((c) => c.screenshotUrl);
   const shotPending = list?.some((c) => c.type === "screenshot" && waiting(c)) ?? false;
   const offline = !screen.online || !screen.paired;
+  const kiosk = kioskNow(screen, list, now);
+  const kioskBusy = sending === "kioskUnlock" || sending === "kioskLock" || (list?.some((c) => (c.type === "kioskUnlock" || c.type === "kioskLock") && waiting(c)) ?? false);
 
   return (
     <section className="rounded-xl border bg-card">
@@ -124,6 +145,8 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
             );
           })}
         </div>
+
+        <KioskRow state={kiosk.state} until={kiosk.until} busy={kioskBusy} disabled={offline || sending !== null} onSend={(t) => void send(t)} />
 
         {error && (
           <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-sm text-destructive">
@@ -174,5 +197,58 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
         </AlertDialogContent>
       </AlertDialog>
     </section>
+  );
+}
+
+function KioskRow({
+  state,
+  until,
+  busy,
+  disabled,
+  onSend,
+}: {
+  state: KioskState | null;
+  until: string | null;
+  busy: boolean;
+  disabled: boolean;
+  onSend: (type: RemoteCommandType) => void;
+}) {
+  if (state === null) return null; // app version from before kiosk mode
+  if (state === "off") {
+    return (
+      <p className="rounded-md bg-mist/60 px-3 py-2 text-sm text-muted-foreground">
+        Kiosk mode is not set up on this TV, so the remote can leave the app. It is set up once with a cable or network
+        connection; see the TV app guide.
+      </p>
+    );
+  }
+  const locked = state === "locked";
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-mist/60 px-3 py-2">
+      <p className="text-sm">
+        {locked ? (
+          <>
+            <span className="font-medium">Locked.</span> <span className="text-muted-foreground">Only Darpan can run on this TV.</span>
+          </>
+        ) : (
+          <>
+            <span className="font-medium">Unlocked for maintenance</span>
+            <span className="text-muted-foreground">
+              {until ? ` until ${TIME.format(new Date(until))}` : ""}. The TV&apos;s settings can be opened with the Menu key.
+            </span>
+          </>
+        )}
+      </p>
+      <Button
+        variant="outline"
+        disabled={disabled || busy}
+        onClick={() => onSend(locked ? "kioskUnlock" : "kioskLock")}
+        aria-description={locked ? `Allow the TV's settings for ${KIOSK_MAINTENANCE_MIN} minutes, then lock again` : "Lock the TV now"}
+        className="h-10 px-3"
+      >
+        {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : locked ? <LockOpen data-icon="inline-start" /> : <Lock data-icon="inline-start" />}
+        {locked ? `Unlock for ${KIOSK_MAINTENANCE_MIN} min` : "Lock now"}
+      </Button>
+    </div>
   );
 }

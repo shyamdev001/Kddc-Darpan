@@ -10,7 +10,7 @@ import {
   type OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { SkipThrottle } from '@nestjs/throttler';
-import { DEVICE_NAMESPACE, type CommandAckPayload, type DeviceCommandPayload, type HeartbeatPayload } from '@darpan/shared';
+import { DEVICE_NAMESPACE, KIOSK_STATES, type CommandAckPayload, type DeviceCommandPayload, type HeartbeatPayload } from '@darpan/shared';
 import { bufferTime, filter, Subject, type Subscription } from 'rxjs';
 import type { Namespace, Socket } from 'socket.io';
 import { ContentEvents } from '../events/content-events';
@@ -136,6 +136,10 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
         ramTotalMb: mb(body.ramTotalBytes),
         appVersion: shortText(body.appVersion, 40),
         manifestVersion: shortText(body.manifestVersion, 64),
+        // Older app versions send no kiosk fields: leave what we had.
+        ...(typeof body.kiosk === 'string' && (KIOSK_STATES as readonly string[]).includes(body.kiosk)
+          ? { kioskState: body.kiosk, kioskUntil: kioskUntil(body.kiosk, body.kioskUntil) }
+          : {}),
       },
     });
     return { ok: true };
@@ -183,4 +187,11 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       this.logger.error('Failed to push manifest updates', err as Error);
     }
   }
+}
+
+/** Maintenance end time from the TV, ignored unless it is soon (a TV clock can be wrong). */
+function kioskUntil(state: string, value: unknown): Date | null {
+  if (state !== 'maintenance' || typeof value !== 'string') return null;
+  const t = Date.parse(value);
+  return Number.isFinite(t) && t > Date.now() - 60_000 && t < Date.now() + 24 * 3_600_000 ? new Date(t) : null;
 }

@@ -32,13 +32,30 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
             <!-- Can be chosen as the TV's home app: Android then opens it at every power-on
-                 (apps may not start themselves at boot since Android 10). Kiosk mode will pin it. -->
+                 (apps may not start themselves at boot since Android 10). Kiosk mode pins it. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- Kiosk mode: lets the app become device owner (adb dpm set-device-owner, see README). -->
+        <receiver
+            android:name=".AdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".WatchdogReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"
