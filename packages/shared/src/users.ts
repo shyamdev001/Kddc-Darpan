@@ -21,6 +21,7 @@ export interface UserEntry {
   name: string;
   role: UserRole;
   isActive: boolean;
+  twoFactor: boolean;
   region: { id: string; name: string } | null;
   branch: { id: string; name: string; code: string | null } | null;
   lastLoginAt: string | null;

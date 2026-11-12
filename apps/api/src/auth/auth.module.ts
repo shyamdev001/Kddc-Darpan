@@ -5,6 +5,7 @@ import { jwtSecret, sessionTtlHours } from './auth.constants';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AuthService } from './auth.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [AuthService, TwoFactorService, { provide: APP_GUARD, useClass: AuthGuard }],
+  exports: [TwoFactorService],
 })
 export class AuthModule {}

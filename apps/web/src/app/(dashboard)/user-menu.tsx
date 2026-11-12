@@ -1,5 +1,9 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ShieldCheck } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
 import { getSessionUser } from "@/lib/session";
+import { cn } from "@/lib/utils";
 import { ChangePasswordButton } from "./change-password-button";
 import { LogoutButton } from "./logout-button";
 
@@ -19,6 +23,19 @@ function initials(name: string) {
     .join("");
 }
 
+function AccountLink() {
+  return (
+    <Link
+      href="/account"
+      aria-label="Account and two-step sign-in"
+      title="Account and two-step sign-in"
+      className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "text-muted-foreground hover:text-foreground")}
+    >
+      <ShieldCheck />
+    </Link>
+  );
+}
+
 export async function UserMenu({ compact = false }: { compact?: boolean }) {
   const user = await getSessionUser();
   // Cookie present but session invalid (expired, account disabled): back to sign-in.
@@ -27,7 +44,8 @@ export async function UserMenu({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
       <div className="flex items-center">
-        <ChangePasswordButton />
+        <AccountLink />
+      <ChangePasswordButton />
         <LogoutButton iconOnly />
       </div>
     );
@@ -47,6 +65,7 @@ export async function UserMenu({ compact = false }: { compact?: boolean }) {
           {ROLE_LABEL[user.role] ?? user.role}
         </p>
       </div>
+      <AccountLink />
       <ChangePasswordButton />
       <LogoutButton iconOnly />
     </div>

@@ -8,11 +8,13 @@ import {
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
+import { twoFactorRequired } from '@darpan/shared';
 import type { UserRole } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SESSION_COOKIE } from './auth.constants';
 import type { SessionPayload } from './auth.types';
-import { IS_PUBLIC_KEY, ROLES_KEY } from './decorators';
+import { ALLOW_WITHOUT_2FA_KEY, IS_PUBLIC_KEY, ROLES_KEY } from './decorators';
+import { twoFactorPolicy } from './totp';
 
 /**
  * Global guard: every HTTP route needs a valid session cookie unless marked @Public().
@@ -43,10 +45,12 @@ export class AuthGuard implements CanActivate {
     } catch {
       throw new UnauthorizedException('Session expired');
     }
+    // A half-finished sign-in (password right, code not yet given) is not a session.
+    if ((payload as { purpose?: unknown }).purpose !== undefined) throw new UnauthorizedException('Not logged in');
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, name: true, role: true, isActive: true, regionId: true, branchId: true, passwordChangedAt: true },
+      select: { id: true, email: true, name: true, role: true, isActive: true, regionId: true, branchId: true, passwordChangedAt: true, totpEnabled: true },
     });
     if (!user || !user.isActive) throw new UnauthorizedException('Account disabled');
     // A password change or reset signs out every session issued before it.
@@ -55,8 +59,16 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Session expired');
     }
 
-    const { isActive: _ignored, passwordChangedAt: _changed, ...authUser } = user;
+    const { isActive: _ignored, passwordChangedAt: _changed, totpEnabled, ...authUser } = user;
     req.user = authUser;
+
+    if (
+      !totpEnabled &&
+      twoFactorRequired(twoFactorPolicy(), user.role) &&
+      !this.reflector.getAllAndOverride<boolean>(ALLOW_WITHOUT_2FA_KEY, targets)
+    ) {
+      throw new ForbiddenException({ statusCode: 403, code: '2FA_REQUIRED', message: 'Turn on two-step sign-in on your Account page first' });
+    }
 
     const roles = this.reflector.getAllAndOverride<UserRole[] | undefined>(ROLES_KEY, targets);
     if (roles?.length && user.role !== 'SUPER_ADMIN' && !roles.includes(user.role)) {

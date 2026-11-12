@@ -16,6 +16,7 @@ const userSelect = {
   createdAt: true,
   regionId: true,
   branchId: true,
+  totpEnabled: true,
 } as const;
 
 export function hashPassword(password: string): Promise<string> {
@@ -50,6 +51,7 @@ export class UsersService {
           branch: u.branchId ? (branchById.get(u.branchId) ?? null) : null,
           lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
           createdAt: u.createdAt.toISOString(),
+          twoFactor: u.totpEnabled,
         }),
       ),
       regions,

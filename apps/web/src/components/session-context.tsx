@@ -9,6 +9,8 @@ export interface ClientUser {
   id: string;
   name: string;
   role: UserRole;
+  /** The bank requires two-step sign-in for this person and it is not on yet. */
+  needsTwoFactor: boolean;
 }
 
 const SessionContext = createContext<ClientUser | null>(null);
@@ -42,6 +44,17 @@ export function canOpen(pathname: string, role: UserRole): boolean {
 export function AccessCheck({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const user = useContext(SessionContext);
+  if (user?.needsTwoFactor && pathname !== "/account") {
+    return (
+      <div className="py-16 text-center">
+        <p className="font-medium">Turn on two-step sign-in to continue.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Your account must confirm each sign-in with a code from your phone.</p>
+        <Link href="/account" className="mt-4 inline-block text-sm font-medium text-neel hover:underline">
+          Set it up now
+        </Link>
+      </div>
+    );
+  }
   if (user && pathname && !canOpen(pathname, user.role)) {
     return (
       <div className="py-16 text-center">

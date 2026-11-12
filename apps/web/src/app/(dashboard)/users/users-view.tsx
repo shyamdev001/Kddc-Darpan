@@ -42,10 +42,24 @@ export function UsersView() {
       .catch((e: Error) => setError(e.message));
   }, []);
 
+  async function resetTwoFactor(u: UserEntry) {
+    const ok = window.confirm(
+      `Turn off two-step sign-in for ${u.name}? Do this only if they lost their phone and recovery codes. They can sign in with their password alone until they set it up again.`,
+    );
+    if (!ok) return;
+    try {
+      setData(await apiFetch<UsersResponse>(`/api/users/${u.id}/2fa`, { method: "DELETE" }));
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   if (!data) return error ? <p className="text-destructive">{error}</p> : <div className="h-96 animate-pulse rounded-xl bg-muted" />;
 
   return (
     <div className="grid gap-4">
+      {error && <ErrorBox>{error}</ErrorBox>}
       <div className="flex justify-end">
         <Button onClick={() => setEditing({ kind: "new" })} className="h-10 px-4 text-[15px]">
           <Plus data-icon="inline-start" />
@@ -61,6 +75,7 @@ export function UsersView() {
                   <span className={cn("font-medium", !u.isActive && "text-muted-foreground")}>{u.name}</span>
                   {u.id === me?.id && <span className="text-sm text-muted-foreground">(you)</span>}
                   {!u.isActive && <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Turned off</span>}
+                  {u.twoFactor && <span className="rounded-md bg-ok/10 px-2 py-0.5 text-xs font-medium text-ok">Two-step on</span>}
                 </p>
                 <p className="truncate text-sm text-muted-foreground">{u.email}</p>
               </div>
@@ -78,6 +93,11 @@ export function UsersView() {
                 <Button variant="ghost" className="h-9 px-3" onClick={() => setEditing({ kind: "password", user: u })}>
                   Set password
                 </Button>
+                {u.twoFactor && u.id !== me?.id && (
+                  <Button variant="ghost" className="h-9 px-3" onClick={() => resetTwoFactor(u)}>
+                    Turn off two-step
+                  </Button>
+                )}
               </div>
             </li>
           ))}

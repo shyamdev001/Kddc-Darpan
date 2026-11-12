@@ -16,6 +16,10 @@ const ACTION_TEXT: Record<string, string> = {
   "auth.logout": "Signed out",
   "auth.password_change": "Changed own password",
   "auth.password_change_failed": "Wrong current password when changing it",
+  "auth.2fa_enable": "Turned on two-step sign-in",
+  "auth.2fa_disable": "Turned off two-step sign-in",
+  "auth.2fa_failed": "Wrong two-step sign-in code",
+  "user.reset_2fa": "Turned off someone's two-step sign-in",
   "user.create": "Added a person",
   "user.update": "Changed a person's account",
   "user.activate": "Turned an account on",
@@ -68,7 +72,7 @@ function describe(action: string): string {
   return action;
 }
 
-const WARN = new Set(["auth.login_failed", "auth.password_change_failed", "screen.claim_failed", "user.deactivate"]);
+const WARN = new Set(["auth.login_failed", "auth.2fa_failed", "user.reset_2fa", "auth.password_change_failed", "screen.claim_failed", "user.deactivate"]);
 
 const PERIODS = [
   { value: 0, label: "Today" },

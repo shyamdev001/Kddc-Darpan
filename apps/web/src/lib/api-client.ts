@@ -11,6 +11,12 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
     throw new Error("Your session ended.");
   }
   const body = res.status === 204 ? null : await res.json().catch(() => null);
+  if (res.status === 403 && (body as { code?: string } | null)?.code === "2FA_REQUIRED") {
+    // A plain helper, not a component: a full page load also refreshes the server-rendered layout.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign("/account");
+    throw new Error("Turn on two-step sign-in first.");
+  }
   if (!res.ok) {
     const message = (body as { message?: string | string[] } | null)?.message;
     throw new Error(Array.isArray(message) ? message[0] : (message ?? `Request failed (error ${res.status}).`));

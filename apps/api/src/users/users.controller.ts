@@ -1,15 +1,19 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthUser } from '../auth/auth.types';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { CreateUserDto, ResetPasswordDto, UpdateUserDto } from './users.dto';
+import { TwoFactorService } from '../auth/two-factor.service';
 import { UsersService } from './users.service';
 
 /** Accounts are managed by super admins only (Roles always lets SUPER_ADMIN through). */
 @Controller('users')
 @Roles('SUPER_ADMIN')
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly twoFactor: TwoFactorService,
+  ) {}
 
   @Get()
   list() {
@@ -29,5 +33,12 @@ export class UsersController {
   @Put(':id/password')
   resetPassword(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ResetPasswordDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     return this.users.resetPassword(id, dto.password, user, req.ip);
+  }
+
+  /** For someone who lost their phone and recovery codes: they sign in with the password alone, then set it up again. */
+  @Delete(':id/2fa')
+  async reset2fa(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    await this.twoFactor.adminReset(id, user, req.ip);
+    return this.users.overview();
   }
 }

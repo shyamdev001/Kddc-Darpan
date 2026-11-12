@@ -294,8 +294,10 @@ model User {
   passwordHash String
   role         UserRole  @default(BRANCH_VIEWER)
   isActive     Boolean   @default(true)
-  totpSecret   String? // Phase 2 (encrypted)
+  totpSecret   String? // AES-256-GCM encrypted with TOTP_ENCRYPTION_KEY
   totpEnabled  Boolean   @default(false)
+  totpLastStep Int? // last accepted 30-second step, so a code cannot be used twice
+  recoveryCodes String[] @default([]) // SHA-256 of unused one-time recovery codes
   lastLoginAt  DateTime?
   passwordChangedAt DateTime? // sessions issued before this are refused
   regionId     String?   @db.Uuid // scope for REGION_MANAGER
