@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { BrandMark } from "@/components/brand";
+import { ConfirmProvider } from "@/components/confirm-dialog";
 import { SessionGate } from "./session-gate";
 import { SidebarNavFallback } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
@@ -34,7 +35,9 @@ export default function DashboardLayout({ children }: LayoutProps<"/">) {
 
       <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
         <Suspense fallback={<div className="mx-auto h-96 max-w-6xl animate-pulse rounded-xl bg-muted" />}>
-          <SessionGate>{children}</SessionGate>
+          <ConfirmProvider>
+            <SessionGate>{children}</SessionGate>
+          </ConfirmProvider>
         </Suspense>
       </main>
     </div>

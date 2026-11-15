@@ -15,6 +15,7 @@ import {
   type StartBroadcastRequest,
 } from "@darpan/shared";
 import { Film, ImageIcon, Link2, Loader2, MessageSquareText, Radio, Square, VolumeX } from "lucide-react";
+import { useConfirm } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -129,10 +130,23 @@ function endedText(b: BroadcastEntry): string {
 function ActiveCard({ b, onChange }: { b: BroadcastEntry; onChange: (d: BroadcastsResponse) => void }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
   const s = b.screens;
 
   async function stop() {
-    if (!window.confirm(`Stop "${headline(b)}"? The screens go back to their playlists.`)) return;
+    const ok = await confirm({
+      title: "Stop this broadcast?",
+      description: "The screens go back to their playlists within a few seconds.",
+      details: [
+        { label: "Showing", value: headline(b) },
+        { label: "On", value: whereText(b.level, b.target) },
+      ],
+      confirmLabel: "Stop broadcast",
+      cancelLabel: "Keep it on",
+      tone: "danger",
+      icon: Square,
+    });
+    if (!ok) return;
     setPending(true);
     setError(null);
     try {
@@ -210,6 +224,7 @@ function StartForm({ onStarted }: { onStarted: (d: BroadcastsResponse) => void }
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (kind !== "MEDIA" || media) return;
@@ -226,9 +241,31 @@ function StartForm({ onStarted }: { onStarted: (d: BroadcastsResponse) => void }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const where = target.level === "ALL" ? "every screen" : "the chosen screens";
     const ends = TIME_ONLY.format(new Date(Date.now() + duration * 60_000));
-    if (!window.confirm(`Show this on ${where} now? It replaces the ads until ${ends}, or until you press Stop.`)) return;
+    const what =
+      kind === "MESSAGE"
+        ? message.trim()
+        : kind === "MEDIA"
+          ? (chosen?.displayName ?? "Poster or video")
+          : youtubeId(url)
+            ? "YouTube video"
+            : "Live stream";
+    const ok = await confirm({
+      title: target.level === "ALL" ? "Show this on every screen now?" : "Show this on the chosen screens now?",
+      description: "It replaces the ads at once. You can stop it any time on this page.",
+      details: [
+        ...(title.trim() ? [{ label: "Heading", value: title.trim() }] : []),
+        { label: "Showing", value: <span className="line-clamp-3">{what}</span> },
+        { label: "On", value: target.level === "ALL" ? "Every screen" : (target.label ?? "The chosen place") },
+        { label: "Until", value: `${ends} (${DURATIONS.find((d) => d.value === duration)?.label ?? `${duration} minutes`})` },
+        ...(kind !== "MESSAGE" ? [{ label: "Sound", value: muted ? "Off" : "On" }] : []),
+      ],
+      confirmLabel: "Show on screens now",
+      cancelLabel: "Not yet",
+      tone: "alert",
+      icon: Radio,
+    });
+    if (!ok) return;
     setPending(true);
     setError(null);
     const body: StartBroadcastRequest = {

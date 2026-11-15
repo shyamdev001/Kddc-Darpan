@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { MIN_PASSWORD_LENGTH, ROLE_LABELS, UserRole, type UserEntry, type UsersResponse } from "@darpan/shared";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, ShieldOff } from "lucide-react";
+import { useConfirm } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,7 @@ export function UsersView() {
   const [data, setData] = useState<UsersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
+  const confirm = useConfirm();
 
   useEffect(() => {
     apiFetch<UsersResponse>("/api/users")
@@ -43,9 +45,16 @@ export function UsersView() {
   }, []);
 
   async function resetTwoFactor(u: UserEntry) {
-    const ok = window.confirm(
-      `Turn off two-step sign-in for ${u.name}? Do this only if they lost their phone and recovery codes. They can sign in with their password alone until they set it up again.`,
-    );
+    const ok = await confirm({
+      title: `Turn off two-step sign-in for ${u.name}?`,
+      description:
+        "Do this only if they lost their phone and their recovery codes. Until they set it up again, their password alone signs them in.",
+      details: [{ label: "Account", value: u.email }],
+      confirmLabel: "Turn off two-step sign-in",
+      cancelLabel: "Keep it on",
+      tone: "danger",
+      icon: ShieldOff,
+    });
     if (!ok) return;
     try {
       setData(await apiFetch<UsersResponse>(`/api/users/${u.id}/2fa`, { method: "DELETE" }));

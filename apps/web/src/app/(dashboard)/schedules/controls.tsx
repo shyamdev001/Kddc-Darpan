@@ -53,6 +53,8 @@ export function TimeInput({ id, value, onChange, disabled }: { id: string; value
 export interface Target {
   level: PlaylistSource;
   targetId: string;
+  /** The chosen place's name as the picker shows it, for confirmations. */
+  label?: string;
 }
 
 interface Options {
@@ -104,7 +106,7 @@ export function TargetPicker({ value, onChange, idPrefix }: { value: Target; onC
           <NativeSelect
             id={`${idPrefix}-target`}
             value={value.targetId}
-            onChange={(e) => onChange({ ...value, targetId: e.target.value })}
+            onChange={(e) => onChange({ ...value, targetId: e.target.value, label: list.find((o) => o.id === e.target.value)?.label })}
             disabled={!options}
           >
             <option value="">{options ? (list.length ? `Choose a ${LEVEL_TEXT[value.level].toLowerCase()}` : "None yet") : "Loading"}</option>
