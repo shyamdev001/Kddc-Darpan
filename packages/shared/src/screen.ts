@@ -17,6 +17,38 @@ export interface BranchRef {
   code: string | null;
 }
 
+// ---- Live wall: what every screen shows right now ----
+
+/** One tile on the Live wall. TVs report each new item as it comes on, so this is seconds old. */
+export interface LiveScreen {
+  id: string;
+  name: string;
+  online: boolean;
+  lastSeenAt: string | null;
+  orientation: Orientation;
+  branch: { id: string; name: string } | null;
+  region: { id: string; name: string } | null;
+  /** The poster or video on screen (null while offline, idle or showing a broadcast). */
+  nowPlaying: { id: string; displayName: string; type: 'IMAGE' | 'VIDEO' } | null;
+  /** A broadcast this TV says it is showing, while that broadcast is still running. */
+  broadcast: {
+    id: string;
+    kind: 'MESSAGE' | 'MEDIA' | 'LINK';
+    title: string | null;
+    message: string | null;
+    mediaId: string | null;
+    youtubeId: string | null;
+    /** "playing", "loading" or "error: ..." as the TV reports it. */
+    status: string | null;
+  } | null;
+}
+
+export interface LiveWallResponse {
+  items: LiveScreen[];
+  /** Server time of this snapshot. */
+  at: string;
+}
+
 export interface ScreenSummary {
   id: string;
   name: string;

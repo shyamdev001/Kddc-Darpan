@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
+  BROADCAST_DEFAULT_MIN,
   BROADCAST_MESSAGE_MAX,
   BROADCAST_TITLE_MAX,
   isYoutubeHost,
@@ -29,8 +30,9 @@ const KINDS: { value: BroadcastKind; label: string; icon: typeof Radio }[] = [
   { value: "LINK", label: "Live link", icon: Link2 },
 ];
 
+// Every broadcast ends by itself (a forgotten one must not keep the ads off for good); Stop ends it sooner.
 const DURATIONS = [
-  { value: 0, label: "Until I stop it" },
+  { value: 5, label: "5 minutes" },
   { value: 15, label: "15 minutes" },
   { value: 30, label: "30 minutes" },
   { value: 60, label: "1 hour" },
@@ -41,6 +43,7 @@ const DURATIONS = [
 ];
 
 const TIME = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
+const TIME_ONLY = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 const textareaClass =
   "w-full min-w-0 rounded-lg border border-input bg-transparent px-3 py-2 text-[15px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
@@ -201,7 +204,7 @@ function StartForm({ onStarted }: { onStarted: (d: BroadcastsResponse) => void }
   const [mediaId, setMediaId] = useState("");
   const [url, setUrl] = useState("");
   const [muted, setMuted] = useState(false);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(BROADCAST_DEFAULT_MIN);
   const [target, setTarget] = useState<Target>({ level: "ALL", targetId: "" });
   const [media, setMedia] = useState<MediaItem[] | null>(null);
   const [pending, setPending] = useState(false);
@@ -224,7 +227,8 @@ function StartForm({ onStarted }: { onStarted: (d: BroadcastsResponse) => void }
   async function submit(e: FormEvent) {
     e.preventDefault();
     const where = target.level === "ALL" ? "every screen" : "the chosen screens";
-    if (!window.confirm(`Show this on ${where} now? It replaces the ads until it is stopped${duration ? " or its time is up" : ""}.`)) return;
+    const ends = TIME_ONLY.format(new Date(Date.now() + duration * 60_000));
+    if (!window.confirm(`Show this on ${where} now? It replaces the ads until ${ends}, or until you press Stop.`)) return;
     setPending(true);
     setError(null);
     const body: StartBroadcastRequest = {
@@ -236,7 +240,7 @@ function StartForm({ onStarted }: { onStarted: (d: BroadcastsResponse) => void }
       ...(kind === "MEDIA" ? { mediaId } : {}),
       ...(kind === "LINK" ? { url: url.trim() } : {}),
       ...(kind !== "MESSAGE" ? { muted } : {}),
-      ...(duration ? { durationMin: duration } : {}),
+      durationMin: duration,
     };
     try {
       onStarted(await apiFetch<BroadcastsResponse>("/api/broadcasts", { method: "POST", body: JSON.stringify(body) }));

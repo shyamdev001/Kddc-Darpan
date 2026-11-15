@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { isYoutubeHost, youtubeId, type BroadcastEntry, type BroadcastScreenCount, type BroadcastsResponse, type PlaylistSource } from '@darpan/shared';
+import { BROADCAST_DEFAULT_MIN, isYoutubeHost, youtubeId, type BroadcastEntry, type BroadcastScreenCount, type BroadcastsResponse, type PlaylistSource } from '@darpan/shared';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
 import { ContentEvents } from '../events/content-events';
@@ -88,7 +88,8 @@ export class BroadcastsService {
         muted: dto.muted ?? false,
         targetType: dto.level,
         ...target.fields,
-        endsAt: dto.durationMin ? new Date(Date.now() + dto.durationMin * 60_000) : null,
+        // Always an end time: a forgotten broadcast must not keep the ads off the screens for good.
+        endsAt: new Date(Date.now() + (dto.durationMin ?? BROADCAST_DEFAULT_MIN) * 60_000),
         startedById: user.id,
       },
     });

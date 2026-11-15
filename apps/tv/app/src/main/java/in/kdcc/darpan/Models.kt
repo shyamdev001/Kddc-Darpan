@@ -109,7 +109,9 @@ data class ManifestBroadcast(
     val media: ManifestItem? = null,
     val link: BroadcastLink? = null,
     val muted: Boolean = false,
-    val endsAt: String? = null, // ISO; null = until stopped
+    /** ISO, server clock. Recorded videos play from (now - startedAt) so all screens show the same moment. */
+    val startedAt: String? = null,
+    val endsAt: String? = null, // ISO; null only for broadcasts from before every broadcast had an end
 )
 
 @Serializable

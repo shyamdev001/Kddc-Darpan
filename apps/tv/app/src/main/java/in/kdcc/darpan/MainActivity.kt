@@ -109,6 +109,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             scope,
             onState = { state -> onPlayState(state) },
             onIdleReason = { reason -> idleDetail.text = reason },
+            onNowPlaying = { link?.sendHeartbeat() },
         )
         broadcasts = BroadcastPlayer(
             this,

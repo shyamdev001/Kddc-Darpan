@@ -24,9 +24,20 @@ export interface ManifestBroadcast {
   /** LINK: 'youtube' plays in YouTube's own player; 'stream' plays the url directly. */
   link: { type: 'youtube'; youtubeId: string } | { type: 'stream'; url: string } | null;
   muted: boolean;
-  /** ISO time it ends by itself; null = until stopped. */
+  /**
+   * ISO time it was started (server clock). Recorded videos play from (now - startedAt), so every
+   * screen shows the same moment instead of each starting from the beginning when it loads.
+   */
+  startedAt: string;
+  /** ISO time it ends by itself. Null only for broadcasts started before every broadcast had an end. */
   endsAt: string | null;
 }
+
+/**
+ * Every broadcast ends by itself, so one that is forgotten cannot keep the ads off the screens.
+ * This is the length when none is chosen.
+ */
+export const BROADCAST_DEFAULT_MIN = 60;
 
 /** How each screen under a broadcast is doing, from the TVs' heartbeats. */
 export interface BroadcastScreenCount {
@@ -76,7 +87,7 @@ export interface StartBroadcastRequest {
   mediaId?: string;
   url?: string;
   muted?: boolean;
-  /** Minutes until it ends by itself; omitted = until stopped. */
+  /** Minutes until it ends by itself; omitted = BROADCAST_DEFAULT_MIN. */
   durationMin?: number;
 }
 

@@ -125,6 +125,7 @@ function toManifestBroadcast(b: BroadcastRow | null): ManifestBroadcast | null {
     media,
     link: b.kind !== 'LINK' || !b.url ? null : ytId ? { type: 'youtube', youtubeId: ytId } : { type: 'stream', url: b.url },
     muted: b.muted,
+    startedAt: b.startedAt.toISOString(),
     endsAt: b.endsAt?.toISOString() ?? null,
   };
 }

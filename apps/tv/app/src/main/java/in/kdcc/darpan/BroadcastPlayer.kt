@@ -290,6 +290,18 @@ class BroadcastPlayer(
         val uri = if (cache.has(item)) Uri.fromFile(cache.fileFor(item)) else Uri.parse(item.url)
         p.setMediaItem(MediaItem.fromUri(uri))
         p.repeatMode = Player.REPEAT_MODE_ONE
+        // Join at the same moment as every other screen, not from the start.
+        val startMs = b.startedAt?.let { parseTime(it) }
+        if (startMs != null) {
+            p.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state != Player.STATE_READY || p.duration <= 0) return
+                    p.removeListener(this)
+                    val at = (TrustedClock.now() - startMs).coerceAtLeast(0) % p.duration
+                    if (at > SYNC_SLACK_MS) p.seekTo(at)
+                }
+            })
+        }
         setStatus("loading")
         p.prepare()
         p.play()
@@ -315,7 +327,11 @@ class BroadcastPlayer(
         w.settings.javaScriptEnabled = true
         w.settings.domStorageEnabled = true
         w.settings.mediaPlaybackRequiresUserGesture = false // play with sound, no remote click needed
+        // YouTube's phone player shows its own buttons over the video; the desktop player with
+        // controls=0 shows none. Ask for the desktop one.
+        w.settings.userAgentString = DESKTOP_UA
         w.isFocusable = false
+        w.isFocusableInTouchMode = false
         w.webChromeClient = WebChromeClient()
         w.webViewClient = object : WebViewClient() {
             // Stay on the player page: no navigating away to the YouTube site.
@@ -323,10 +339,19 @@ class BroadcastPlayer(
         }
         w.addJavascriptInterface(Bridge(b), "Darpan")
         box.addView(w, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        // A clear cover on top: no remote key, touch or mouse can reach the player and bring up its controls.
+        box.addView(View(activity).apply {
+            isClickable = true
+            isFocusable = false
+            setOnTouchListener { _, _ -> true }
+        }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         web = w
         setStatus("loading")
+        val startMs = b.startedAt?.let { parseTime(it) } ?: 0L
+        // The page's clock runs on the device clock; tell it how far that is from our trusted time.
+        val offsetMs = TrustedClock.now() - System.currentTimeMillis()
         // The page's address is the app id: YouTube asks embedded players to say which app they are in.
-        w.loadDataWithBaseURL("$ORIGIN/", youtubePage(videoId, b.muted), "text/html", "utf-8", null)
+        w.loadDataWithBaseURL("$ORIGIN/", youtubePage(videoId, b.muted, startMs, offsetMs), "text/html", "utf-8", null)
     }
 
     /** Messages from the YouTube page. It can only set a short status text. */
@@ -347,26 +372,47 @@ class BroadcastPlayer(
         }
     }
 
-    private fun youtubePage(id: String, muted: Boolean): String = """
+    private fun youtubePage(id: String, muted: Boolean, startMs: Long, offsetMs: Long): String = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style>
+        <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:fixed;top:0;left:0;width:100%;height:100%;border:0;pointer-events:none}</style>
         </head><body><div id="p"></div>
         <script>
-        var MUTED = $muted;
+        var MUTED = $muted, START = $startMs, OFFSET = $offsetMs, SLACK = 2;
         var WHY = {2:'the link is not valid',5:'YouTube could not play it here',100:'the video was removed or is private',
                    101:'its owner does not allow playing it outside YouTube',150:'its owner does not allow playing it outside YouTube',
                    152:'YouTube refused this player',153:'YouTube refused this player'};
+        var player = null;
+        function now() { return Date.now() + OFFSET; }
+        // A live stream: every screen just plays its live edge. A recorded video: every screen plays the
+        // second it would be at if it had started with the broadcast, so they all show the same picture.
+        function isLive(p) {
+          try { var d = p.getVideoData(); if (d && typeof d.isLive === 'boolean') return d.isLive; } catch (e) {}
+          return !(p.getDuration() > 0);
+        }
+        function sync(p) {
+          if (!START || isLive(p)) return;
+          var len = p.getDuration();
+          if (!(len > 0)) return;
+          var want = Math.max(0, (now() - START) / 1000) % len;
+          if (Math.abs(p.getCurrentTime() - want) > SLACK) p.seekTo(want, true);
+        }
         function onYouTubeIframeAPIReady() {
-          new YT.Player('p', {
+          player = new YT.Player('p', {
             width: '100%', height: '100%', videoId: '$id',
             playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1, mute: MUTED ? 1 : 0, loop: 1, playlist: '$id',
-                          iv_load_policy: 3, fs: 0, disablekb: 1, origin: '$ORIGIN' },
+                          iv_load_policy: 3, fs: 0, disablekb: 1, modestbranding: 1, cc_load_policy: 0, origin: '$ORIGIN' },
             events: {
               onReady: function (e) { if (!MUTED) { e.target.unMute(); e.target.setVolume(100); } e.target.playVideo(); },
-              onStateChange: function (e) { if (e.data === 1) Darpan.status('playing'); if (e.data === 3) Darpan.status('loading'); },
+              onStateChange: function (e) {
+                if (e.data === 1) { Darpan.status('playing'); sync(e.target); }
+                if (e.data === 3) Darpan.status('loading');
+                if (e.data === 2) e.target.playVideo(); // never stay paused
+              },
               onError: function (e) { Darpan.status('error: ' + (WHY[e.data] || ('YouTube error ' + e.data))); }
             }
           });
+          // Screens drift apart over a long video (buffering); pull back into step now and then.
+          setInterval(function () { if (player && player.getPlayerState && player.getPlayerState() === 1) sync(player); }, 30000);
         }
         </script>
         <script src="https://www.youtube.com/iframe_api" onerror="Darpan.status('error: cannot reach YouTube, check this TV internet')"></script>
@@ -384,6 +430,9 @@ class BroadcastPlayer(
         const val ORIGIN = "https://in.kdcc.darpan"
         const val START_TIMEOUT_MS = 60_000L
         const val RETRY_MS = 15_000L
+        /** Closer than this to where the other screens are: leave it, a seek would only stutter. */
+        const val SYNC_SLACK_MS = 2_000L
+        const val DESKTOP_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         val INK = Color.rgb(20, 25, 54)
         val HALDI = Color.rgb(224, 165, 38)
         val RED = Color.rgb(196, 30, 58)

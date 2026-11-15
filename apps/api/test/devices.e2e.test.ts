@@ -187,6 +187,45 @@ describe('the files in a manifest', () => {
   });
 });
 
+describe('the Live wall', () => {
+  let northTv: TestTv;
+  let southTv: TestTv;
+  let poster: Awaited<ReturnType<typeof createMedia>>;
+  const wall = async (cookie: string) => {
+    const res = await call(t.base, 'GET', '/screens/live', { cookie });
+    assert.equal(res.status, 200);
+    return res.body.items as { id: string; name: string; online: boolean; nowPlaying: { id: string } | null; region: { name: string } | null }[];
+  };
+
+  before(async () => {
+    northTv = await pairedTv(t.base, admin, places.nadiadStation.id, 'Wall north');
+    southTv = await pairedTv(t.base, admin, places.matarBranch.id, 'Wall south');
+    poster = await createMedia(t.prisma, 'Wall poster');
+  });
+
+  it('shows what each online TV last reported playing', async () => {
+    await t.prisma.screen.update({ where: { id: northTv.deviceId }, data: { currentMediaId: poster.id, lastSeenAt: new Date() } });
+    const tile = (await wall(admin)).find((s) => s.id === northTv.deviceId)!;
+    assert.equal(tile.online, true);
+    assert.equal(tile.nowPlaying?.id, poster.id);
+    assert.equal(tile.region?.name, 'North');
+  });
+
+  it('shows an offline TV as offline, not as still playing', async () => {
+    await t.prisma.screen.update({ where: { id: southTv.deviceId }, data: { currentMediaId: poster.id, lastSeenAt: new Date(Date.now() - 3_600_000) } });
+    const tile = (await wall(admin)).find((s) => s.id === southTv.deviceId)!;
+    assert.equal(tile.online, false);
+    assert.equal(tile.nowPlaying, null);
+  });
+
+  it('shows a region manager only their region', async () => {
+    const cookie = await login(t.base, await createUser(t.prisma, 'REGION_MANAGER', { regionId: places.south.id }));
+    const names = (await wall(cookie)).map((s) => s.id);
+    assert.ok(names.includes(southTv.deviceId));
+    assert.ok(!names.includes(northTv.deviceId));
+  });
+});
+
 describe('broadcasts', () => {
   let mainTv: TestTv;
   let matarTv: TestTv;
@@ -240,6 +279,20 @@ describe('broadcasts', () => {
     }
   });
 
+  it('always ends by itself: one hour when no length is given', async () => {
+    const before = Date.now();
+    await start({ kind: 'MESSAGE', level: 'ALL', message: 'No length chosen' });
+    try {
+      const cast = (await manifest(mainTv)).body.broadcast;
+      const ends = new Date(cast.endsAt).getTime();
+      assert.ok(ends >= before + 59 * 60_000 && ends <= Date.now() + 61 * 60_000, `ends ${cast.endsAt}`);
+      // The TVs get the start time, so recorded videos play the same moment on every screen.
+      assert.ok(Math.abs(new Date(cast.startedAt).getTime() - before) < 60_000);
+    } finally {
+      await stopAll();
+    }
+  });
+
   it('plays a YouTube video link in YouTube’s player', async () => {
     const res = await start({ kind: 'LINK', level: 'ALL', url: 'https://youtu.be/dQw4w9WgXcQ?si=x', muted: true });
     assert.equal(res.status, 201);
@@ -250,6 +303,20 @@ describe('broadcasts', () => {
     } finally {
       await stopAll();
     }
+  });
+
+  it('shows on the Live wall only while it is running', async () => {
+    await start({ kind: 'MESSAGE', level: 'ALL', title: 'Notice', message: 'On the wall' });
+    const id = (await active())[0].id;
+    await t.prisma.screen.update({ where: { id: mainTv.deviceId }, data: { broadcastId: id, broadcastStatus: 'playing', lastSeenAt: new Date() } });
+    const tile = async () =>
+      ((await call(t.base, 'GET', '/screens/live', { cookie: admin })).body.items as { id: string; broadcast: { title: string } | null }[]).find(
+        (s) => s.id === mainTv.deviceId,
+      )!;
+    assert.equal((await tile()).broadcast?.title, 'Notice');
+    await stopAll();
+    // The TV has not reported yet that it stopped; the wall must not claim it is still broadcasting.
+    assert.equal((await tile()).broadcast, null);
   });
 
   it('refuses links and files that cannot play', async () => {

@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { UserRole } from "@darpan/shared";
-import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay, PackageCheck, Radio, ScrollText, UsersRound } from "lucide-react";
+import { BarChart3, BellRing, Building2, CalendarClock, Images, LayoutGrid, ListVideo, MonitorPlay, PackageCheck, Radio, ScrollText, Tv, UsersRound } from "lucide-react";
 import { canOpen } from "@/components/session-context";
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/", label: "Overview", icon: LayoutGrid },
   { href: "/screens", label: "Screens", icon: MonitorPlay },
+  { href: "/live", label: "Live wall", icon: Tv },
   { href: "/media", label: "Media", icon: Images },
   { href: "/playlists", label: "Playlists", icon: ListVideo },
   { href: "/schedules", label: "Schedules", icon: CalendarClock },

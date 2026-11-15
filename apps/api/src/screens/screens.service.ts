@@ -6,6 +6,7 @@ import {
   type BranchOption,
   type DeviceStatusResponse,
   type KioskState,
+  type LiveWallResponse,
   type RegisterDeviceResponse,
   type ScreenDetail,
   type ScreenListResponse,
@@ -143,6 +144,60 @@ export class ScreensService {
     ]);
     const playlists = await this.resolver.resolveMany(rows);
     return { items: rows.map((r) => this.toSummary(r, playlists.get(r.id) ?? null)), waitingToPair };
+  }
+
+  /**
+   * The Live wall: what every screen in the user's area shows right now, from what the TVs report.
+   * TVs report each new item as it comes on, so this is a few seconds old at most while they are online.
+   */
+  async live(user: AuthUser): Promise<LiveWallResponse> {
+    const now = new Date();
+    const rows = await this.prisma.screen.findMany({
+      where: { NOT: { status: 'PENDING', name: null }, ...screenScope(user) },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        lastSeenAt: true,
+        orientation: true,
+        broadcastId: true,
+        broadcastStatus: true,
+        branch: { select: { id: true, name: true, taluka: { select: { region: { select: { id: true, name: true } } } } } },
+        currentMedia: { select: { id: true, displayName: true, type: true } },
+      },
+      orderBy: [{ name: 'asc' }],
+    });
+    const online = (r: (typeof rows)[number]) =>
+      r.status !== 'PENDING' && r.lastSeenAt !== null && now.getTime() - r.lastSeenAt.getTime() < ONLINE_WINDOW_MS;
+
+    // Only broadcasts that are still running: a TV that missed the end must not show as broadcasting.
+    const castIds = [...new Set(rows.filter(online).map((r) => r.broadcastId).filter((x): x is string => !!x))];
+    const casts = castIds.length
+      ? await this.prisma.broadcast.findMany({
+          where: { id: { in: castIds }, endedAt: null, OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
+          select: { id: true, kind: true, title: true, message: true, mediaId: true, youtubeId: true },
+        })
+      : [];
+    const castById = new Map(casts.map((c) => [c.id, c]));
+
+    return {
+      at: now.toISOString(),
+      items: rows.map((r) => {
+        const on = online(r);
+        const cast = on && r.broadcastId ? castById.get(r.broadcastId) : undefined;
+        return {
+          id: r.id,
+          name: r.name ?? 'Unnamed screen',
+          online: on,
+          lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
+          orientation: r.orientation,
+          branch: r.branch ? { id: r.branch.id, name: r.branch.name } : null,
+          region: r.branch ? r.branch.taluka.region : null,
+          nowPlaying: on && !cast ? r.currentMedia : null,
+          broadcast: cast ? { ...cast, status: r.broadcastStatus } : null,
+        };
+      }),
+    };
   }
 
   /** 404, not 403, for a screen outside the user's area, so ids cannot be probed. */

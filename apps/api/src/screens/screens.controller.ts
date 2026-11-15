@@ -19,6 +19,12 @@ export class ScreensController {
     return this.screens.list(user);
   }
 
+  /** The Live wall polls this every few seconds. Before screens/:id, which would reject "live". */
+  @Get('screens/live')
+  live(@CurrentUser() user: AuthUser) {
+    return this.screens.live(user);
+  }
+
   @Get('screens/:id')
   get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.screens.detail(id, user);

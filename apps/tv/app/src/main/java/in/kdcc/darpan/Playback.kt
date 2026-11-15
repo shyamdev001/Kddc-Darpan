@@ -71,11 +71,19 @@ class Playback(
     private val onState: (PlayState) -> Unit,
     /** While nothing plays: a short plain-English reason, refreshed every few seconds. */
     private val onIdleReason: (String) -> Unit,
+    /** A different item came on screen: worth telling the server at once (the dashboard's Live wall). */
+    private val onNowPlaying: () -> Unit = {},
 ) {
     /** What is on screen now; sent in the heartbeat. */
     @Volatile
     var currentMediaId: String? = null
         private set
+
+    private fun nowPlaying(mediaId: String) {
+        val changed = currentMediaId != mediaId
+        currentMediaId = mediaId
+        if (changed) onNowPlaying()
+    }
 
     private var manifest: Manifest? = null
     private var loop: Job? = null
@@ -290,7 +298,7 @@ class Playback(
             videoView.visibility = View.GONE
             exo?.stop()
         }
-        currentMediaId = item.mediaId
+        nowPlaying(item.mediaId)
         plays.start(item.mediaId)
 
         delay(FADE_MS)
@@ -316,7 +324,7 @@ class Playback(
         player.prepare()
         videoView.visibility = View.VISIBLE
         player.play()
-        currentMediaId = item.mediaId
+        nowPlaying(item.mediaId)
         plays.start(item.mediaId)
 
         // Play to the end, or stop at durationSec when the playlist trims the video.
