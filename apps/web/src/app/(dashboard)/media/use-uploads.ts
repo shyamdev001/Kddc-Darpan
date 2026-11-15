@@ -75,6 +75,7 @@ export function useUploads(onUploaded: () => void) {
         } else if (status === 401) {
           goToSignInExpired();
         } else {
+          const message = typeof (body as { message?: unknown } | null)?.message === "string" ? (body as { message: string }).message : null;
           const reason =
             status === 0
               ? "Upload interrupted. Check the connection and try again."
@@ -82,7 +83,10 @@ export function useUploads(onUploaded: () => void) {
                 ? "Your role cannot upload media."
                 : status === 413
                   ? "This file is larger than the server allows."
-                  : ((body as { message?: string })?.message ?? `Upload failed (error ${status}).`);
+                  : message
+                    ? message
+                    : // No message of ours: the Darpan server is not running, or another program answered instead.
+                      "Cannot reach the KDCC Darpan server. Check that the API is running, then try again.";
           patch(key, { phase: "rejected", reason });
         }
         pumpQueue();
