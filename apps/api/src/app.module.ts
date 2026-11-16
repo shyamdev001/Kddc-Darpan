@@ -19,6 +19,7 @@ import { BroadcastsModule } from './broadcasts/broadcasts.module';
 import { ScreensModule } from './screens/screens.module';
 import { StatsController } from './stats/stats.controller';
 import { StorageModule } from './storage/storage.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { StorageModule } from './storage/storage.module';
     ReportsModule,
     ReleasesModule,
     UsersModule,
+    RealtimeModule,
   ],
   controllers: [HealthController, StatsController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

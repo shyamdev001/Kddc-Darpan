@@ -1,17 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { PlaylistSource, ScreenListResponse } from "@darpan/shared";
 import { ChevronRight, MonitorPlay } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { formatAgo } from "@/lib/format";
+import { useScreenUpdates } from "@/lib/live-updates";
 import { EmptyState } from "../empty-state";
 import { PairScreenButton } from "./pair-screen-dialog";
 import { ScreenGlyph, ScreenStatusText } from "./screen-glyph";
-
-/** Online status comes from the last time each TV checked in, so refresh the list regularly. */
-const REFRESH_MS = 30_000;
 
 export const SOURCE_TEXT: Record<PlaylistSource, string> = {
   SCREEN: "",
@@ -26,19 +24,22 @@ export function ScreenList() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0); // set with each fetch; Date.now() is not allowed during prerender
 
-  useEffect(() => {
-    const load = () =>
+  const load = useCallback(
+    () =>
       apiFetch<ScreenListResponse>("/api/screens")
         .then((d) => {
           setData(d);
           setNow(Date.now());
           setError(null);
         })
-        .catch((e: Error) => setError(e.message));
+        .catch((e: Error) => setError(e.message)),
+    [],
+  );
+  useEffect(() => {
     void load();
-    const t = setInterval(load, REFRESH_MS);
-    return () => clearInterval(t);
-  }, []);
+  }, [load]);
+  // The server says the moment a TV connects, goes away or is edited.
+  useScreenUpdates(load);
 
   if (error && !data) {
     return (

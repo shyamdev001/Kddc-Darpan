@@ -32,7 +32,8 @@ const shortText = (v: unknown, max: number) => (typeof v === 'string' && v.lengt
  */
 // The HTTP rate limiter does not apply to sockets (it reads req.ip, which a socket message lacks).
 @SkipThrottle()
-@WebSocketGateway({ namespace: DEVICE_NAMESPACE, cors: false, pingInterval: 25_000, pingTimeout: 20_000 })
+// destroyUpgrade off: the dashboard's live channel shares this HTTP server on another path.
+@WebSocketGateway({ namespace: DEVICE_NAMESPACE, cors: false, pingInterval: 25_000, pingTimeout: 20_000, destroyUpgrade: false })
 export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DevicesGateway.name);
   private sub?: Subscription;
@@ -48,7 +49,11 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     private readonly events: ContentEvents,
   ) {}
 
-  onModuleInit() {
+  async onModuleInit() {
+    // After a restart no TV is connected yet; each one marks itself ONLINE again as it reconnects
+    // (within seconds). Without this a TV switched off while the server was down would stay "online".
+    await this.prisma.screen.updateMany({ where: { status: 'ONLINE' }, data: { status: 'OFFLINE' } });
+
     // Collect changes for 2 s, so saving a playlist with 30 edits sends one update, not 30.
     this.sub = this.events.changes
       .pipe(
@@ -91,6 +96,7 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
             },
           });
           next();
+          this.events.screenUpdated(screen.id);
         })
         .catch((err: Error) => {
           this.logger.error('Device socket auth failed', err);
@@ -110,6 +116,7 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     const still = await this.ns.in(room(screenId)).fetchSockets();
     if (still.length === 0) {
       await this.prisma.screen.updateMany({ where: { id: screenId, status: 'ONLINE' }, data: { status: 'OFFLINE' } });
+      this.events.screenUpdated(screenId);
     }
   }
 
@@ -153,6 +160,9 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
           : {}),
       },
     });
+    // A heartbeat proves the connection is up, even if a reconnect race marked the screen offline.
+    await this.prisma.screen.updateMany({ where: { id: screenId, status: 'OFFLINE' }, data: { status: 'ONLINE' } });
+    this.events.screenUpdated(screenId);
     return { ok: true };
   }
 

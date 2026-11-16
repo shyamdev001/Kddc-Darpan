@@ -1,16 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { LiveScreen, LiveWallResponse } from "@darpan/shared";
 import { MonitorOff, Radio, Search } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { formatAgo } from "@/lib/format";
+import { useLiveStatus, useScreenUpdates } from "@/lib/live-updates";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "../empty-state";
-
-/** TVs report each change as it happens; a few seconds of polling keeps the wall close behind. */
-const REFRESH_MS = 3_000;
 
 type Show = "all" | "online" | "broadcast" | "offline";
 const SHOW: { value: Show; label: string }[] = [
@@ -32,29 +30,24 @@ export function LiveWall() {
   const [query, setQuery] = useState("");
   const [show, setShow] = useState<Show>("all");
 
-  useEffect(() => {
-    let stopped = false;
-    const load = () => {
-      // Nobody is looking: skip, and catch up as soon as the tab is visible again.
-      if (document.hidden) return;
+  const load = useCallback(
+    () =>
       apiFetch<LiveWallResponse>("/api/screens/live")
         .then((d) => {
-          if (stopped) return;
           setData(d);
           setNow(Date.now());
           setError(null);
         })
-        .catch((e: Error) => !stopped && setError(e.message));
-    };
-    load();
-    const t = setInterval(load, REFRESH_MS);
-    document.addEventListener("visibilitychange", load);
-    return () => {
-      stopped = true;
-      clearInterval(t);
-      document.removeEventListener("visibilitychange", load);
-    };
-  }, []);
+        .catch((e: Error) => setError(e.message)),
+    [],
+  );
+  useEffect(() => {
+    void load();
+  }, [load]);
+  // Each TV reports every new poster or video as it comes on; the server passes that on at once.
+  // The slow timer is only a safety net (and keeps "x min ago" fresh).
+  useScreenUpdates(load, { fallbackMs: 30_000 });
+  const live = useLiveStatus();
 
   const counts = useMemo(() => {
     const c = { all: 0, online: 0, broadcast: 0, offline: 0 };
@@ -121,7 +114,8 @@ export function LiveWall() {
             </button>
           ))}
         </div>
-        <label className="relative ml-auto w-full sm:w-64">
+        <LiveSign live={live} />
+        <label className="relative w-full sm:w-64">
           <span className="sr-only">Find a screen or branch</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <input
@@ -234,4 +228,21 @@ function Picture({ screen: s }: { screen: LiveScreen }) {
 function Thumb({ id }: { id: string }) {
   // eslint-disable-next-line @next/next/no-img-element -- authenticated API image
   return <img src={`/api/media/${id}/thumbnail`} alt="" className="h-full w-full object-contain" />;
+}
+
+/** Shows whether the wall is getting updates the moment they happen. */
+function LiveSign({ live }: { live: boolean }) {
+  return (
+    <span
+      role="status"
+      className={cn("ml-auto flex items-center gap-2 text-sm", live ? "text-ok" : "text-muted-foreground")}
+      title={live ? "Updates appear the moment a TV reports them" : "Reconnecting; the wall still refreshes every 30 seconds"}
+    >
+      <span className="relative flex size-2.5" aria-hidden>
+        {live && <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-60 motion-reduce:hidden" />}
+        <span className={cn("relative inline-flex size-2.5 rounded-full", live ? "bg-ok" : "bg-muted-foreground/50")} />
+      </span>
+      {live ? "Live" : "Reconnecting"}
+    </span>
+  );
 }

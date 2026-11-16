@@ -19,6 +19,7 @@ import { TwoFactorService } from './two-factor.service';
   ],
   controllers: [AuthController],
   providers: [AuthService, TwoFactorService, { provide: APP_GUARD, useClass: AuthGuard }],
-  exports: [TwoFactorService],
+  // JwtModule: the dashboard's live channel checks the same session cookie.
+  exports: [TwoFactorService, JwtModule],
 })
 export class AuthModule {}

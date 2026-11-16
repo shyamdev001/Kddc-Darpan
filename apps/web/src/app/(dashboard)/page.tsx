@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { LiveRefresh } from "./live-refresh";
 import { OverviewContent } from "./overview-content";
 import { PageHeader } from "./page-header";
 
@@ -12,6 +13,7 @@ export default function OverviewPage() {
       <Suspense fallback={<div className="h-72 animate-pulse rounded-xl bg-muted" />}>
         <OverviewContent />
       </Suspense>
+      <LiveRefresh />
     </div>
   );
 }

@@ -21,6 +21,16 @@ export class ContentEvents {
   screensChanged(...screenIds: string[]): void {
     if (screenIds.length) this.changes.next({ all: false, screenIds });
   }
+
+  /**
+   * What the dashboard shows about a screen changed: it connected, went away, or reported what it
+   * plays. The dashboard gateway passes this on to open dashboards right away. Not a manifest change.
+   */
+  readonly screenUpdates = new Subject<string>();
+
+  screenUpdated(screenId: string): void {
+    this.screenUpdates.next(screenId);
+  }
 }
 
 @Global()

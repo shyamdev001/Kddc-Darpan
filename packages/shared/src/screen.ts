@@ -127,8 +127,23 @@ export interface BranchOption extends BranchRef {
   region: string;
 }
 
-/** A screen counts as online if it was heard from within this window. */
+/**
+ * A screen counts as online while its TV holds the live connection (status ONLINE) and was heard
+ * from within this window. The window only matters if the server missed a disconnect.
+ */
 export const ONLINE_WINDOW_MS = 3 * 60_000;
+
+/**
+ * Live updates for the dashboard: Socket.IO at this path (under /api, so the same proxy rules reach
+ * it), namespace `/dashboard`, signed in by the session cookie. The server only says *which* screens
+ * changed; the page then reloads its data through the normal API, so each user still sees only their area.
+ */
+export const DASHBOARD_SOCKET_PATH = '/api/realtime';
+export const DASHBOARD_NAMESPACE = '/dashboard';
+export const SCREENS_CHANGED_EVENT = 'screens:changed';
+export interface ScreensChangedPayload {
+  screenIds: string[];
+}
 export const PAIRING_CODE_TTL_MS = 30 * 60_000;
 
 /** Commands the dashboard can send to one TV. */

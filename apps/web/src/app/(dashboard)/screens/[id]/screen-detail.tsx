@@ -21,14 +21,13 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { useCanEdit } from "@/components/session-context";
 import { apiFetch } from "@/lib/api-client";
 import { formatAgo, formatDay } from "@/lib/format";
+import { useScreenUpdates } from "@/lib/live-updates";
 import { OrientationPicker } from "../orientation-picker";
 import { PairScreenButton } from "../pair-screen-dialog";
 import { ScreenGlyph, ScreenStatusText } from "../screen-glyph";
 import { SOURCE_TEXT } from "../screen-list";
 import { describeHours, describeSlot } from "../../schedules/format";
 import { RemoteCard } from "./remote-card";
-
-const REFRESH_MS = 30_000;
 
 export function ScreenDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -42,15 +41,17 @@ export function ScreenDetailView() {
     setNow(Date.now());
   }, []);
 
-  useEffect(() => {
-    const load = () =>
+  const load = useCallback(
+    () =>
       apiFetch<ScreenDetail>(`/api/screens/${id}`)
         .then(accept)
-        .catch((e: Error) => setLoadError(e.message));
+        .catch((e: Error) => setLoadError(e.message)),
+    [id, accept],
+  );
+  useEffect(() => {
     void load();
-    const t = setInterval(load, REFRESH_MS);
-    return () => clearInterval(t);
-  }, [id, accept]);
+  }, [load]);
+  useScreenUpdates(load, { only: id });
 
   if (loadError && !screen) {
     return (

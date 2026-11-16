@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   KIOSK_STATES,
-  ONLINE_WINDOW_MS,
   TV_APP_PACKAGE,
   type AppReleaseEntry,
   type KioskState,
@@ -13,6 +12,7 @@ import type { AuthUser } from '../auth/auth.types';
 import { ContentEvents } from '../events/content-events';
 import { sha256File } from '../media/file-utils';
 import { PrismaService } from '../prisma/prisma.service';
+import { isOnline } from '../screens/online';
 import { STORAGE, type StorageDriver } from '../storage/storage.types';
 import { readApkInfo, type ApkInfo } from './apk-info';
 import type { UpdateReleaseDto } from './release.dto';
@@ -41,6 +41,7 @@ export class ReleasesService {
         select: {
           id: true,
           name: true,
+          status: true,
           lastSeenAt: true,
           testUpdates: true,
           appVersion: true,
@@ -73,7 +74,7 @@ export class ReleasesService {
         id: s.id,
         name: s.name ?? 'Unnamed screen',
         branch: s.branch?.name ?? null,
-        online: !!s.lastSeenAt && now - s.lastSeenAt.getTime() < ONLINE_WINDOW_MS,
+        online: isOnline(s, now),
         testUpdates: s.testUpdates,
         appVersion: s.appVersion,
         appVersionCode: s.appVersionCode,

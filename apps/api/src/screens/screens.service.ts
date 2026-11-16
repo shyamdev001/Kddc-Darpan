@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   KIOSK_STATES,
-  ONLINE_WINDOW_MS,
   PAIRING_CODE_TTL_MS,
   type BranchOption,
   type DeviceStatusResponse,
@@ -18,6 +17,7 @@ import { branchScope, isHeadOffice, screenScope } from '../auth/scope';
 import { Prisma } from '../generated/prisma/client';
 import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
+import { isOnline } from './online';
 import { newDeviceToken, newPairingCode } from './device-auth';
 import { CommandsService } from './commands.service';
 import { DevicesGateway } from './devices.gateway';
@@ -167,8 +167,7 @@ export class ScreensService {
       },
       orderBy: [{ name: 'asc' }],
     });
-    const online = (r: (typeof rows)[number]) =>
-      r.status !== 'PENDING' && r.lastSeenAt !== null && now.getTime() - r.lastSeenAt.getTime() < ONLINE_WINDOW_MS;
+    const online = (r: (typeof rows)[number]) => isOnline(r, now.getTime());
 
     // Only broadcasts that are still running: a TV that missed the end must not show as broadcasting.
     const castIds = [...new Set(rows.filter(online).map((r) => r.broadcastId).filter((x): x is string => !!x))];
@@ -364,7 +363,7 @@ export class ScreensService {
       id: s.id,
       name: s.name ?? 'Unnamed screen',
       paired,
-      online: paired && s.lastSeenAt !== null && Date.now() - s.lastSeenAt.getTime() < ONLINE_WINDOW_MS,
+      online: isOnline(s),
       lastSeenAt: s.lastSeenAt?.toISOString() ?? null,
       orientation: s.orientation,
       branch: s.branch ? { id: s.branch.id, name: s.branch.name, code: s.branch.code } : null,

@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import {
-  ONLINE_WINDOW_MS,
   type BranchNode,
   type PlaceLevel,
   type PlacePlaylist,
@@ -14,6 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
 import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
+import { isOnline } from '../screens/online';
 import type {
   CreateBranchDto,
   CreateRegionDto,
@@ -61,7 +61,7 @@ export class PlacesService {
       }),
       this.prisma.screen.findMany({
         where: { status: { not: 'PENDING' }, branchId: { not: null } },
-        select: { branchId: true, lastSeenAt: true },
+        select: { branchId: true, status: true, lastSeenAt: true },
       }),
     ]);
 
@@ -72,12 +72,12 @@ export class PlacesService {
       if (!own.has(key)) own.set(key, a.playlist);
     }
 
-    const cutoff = Date.now() - ONLINE_WINDOW_MS;
+    const now = Date.now();
     const perBranch = new Map<string, ScreenCounts>();
     for (const s of screens) {
       const c = perBranch.get(s.branchId!) ?? counts();
       c.total++;
-      if (s.lastSeenAt && s.lastSeenAt.getTime() > cutoff) c.online++;
+      if (isOnline(s, now)) c.online++;
       perBranch.set(s.branchId!, c);
     }
 
