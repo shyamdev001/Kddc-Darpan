@@ -184,6 +184,7 @@ model Media {
   originalSha256    String // used to detect the same file uploaded twice
   originalSizeBytes BigInt
   originalMimeType  String
+  originalDeletedAt DateTime? // the original is removed 30 days after processing worked, to save disk
 
   // Processed file the TVs download. Null until processing finishes.
   storageKey String? @unique

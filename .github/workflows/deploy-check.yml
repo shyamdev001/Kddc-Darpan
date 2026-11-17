@@ -118,6 +118,11 @@ jobs:
           [ "$live" -ge 1 ]
           # The live database cannot be overwritten by accident.
           ! docker compose exec -T backup sh /scripts/restore.sh "" darpan_prod
+          # A file removed from the live media moves aside in the backup instead of staying forever.
+          docker compose exec -T -u node api rm /data/media/ci-probe.txt
+          docker compose exec -T backup sh /scripts/backup.sh
+          test ! -e backups/media/ci-probe.txt
+          ls backups/media-removed/*/ci-probe.txt
           [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q backup)")" = healthy ]
 
       - name: Live connections pass through Caddy (TVs and dashboard)

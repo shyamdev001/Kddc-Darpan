@@ -62,7 +62,10 @@ Docker volumes `darpan_pgdata` (database), `darpan_media` (uploaded posters and 
 The `backup` service backs up every night at 02:00 India time (`BACKUP_AT_UTC`, default `20:30`):
 
 - `deploy/backups/db/darpan-<date>.dump`: the whole database. The last 14 days are kept (`BACKUP_KEEP_DAYS`).
-- `deploy/backups/media/`: a copy of every poster and video. Files are added, never removed.
+- `deploy/backups/media/`: a copy of every poster and video on the server.
+- `deploy/backups/media-removed/<date>/`: files removed from the server that day (a deleted ad, or an
+  uploaded original, which is deleted a month after processing worked). Kept 14 days like the
+  database dumps, so a poster deleted by mistake can still be found there.
 - `deploy/backups/last-success`: when the last good backup finished. `docker compose ps` shows the
   `backup` service as **unhealthy** if that is more than 26 hours ago.
 
@@ -93,4 +96,6 @@ On a new server, follow "First install" up to step 5, then:
 3. `docker compose exec -e I_STOPPED_THE_API=yes backup sh /scripts/restore.sh darpan-<date>.dump darpan_prod`
 4. Put the media back:
    `docker compose run --rm --no-deps -v ./backups/media:/restore:ro --entrypoint sh api -c 'cp -a /restore/. /data/media/'`
+   Restoring an older dump than the newest? Also copy the `media-removed` folders dated after it:
+   `docker compose run --rm --no-deps -v ./backups/media-removed:/removed:ro --entrypoint sh api -c 'for d in /removed/*/; do cp -a -n "$d". /data/media/; done'`
 5. `docker compose up -d` and sign in. TVs reconnect on their own; they kept playing meanwhile.

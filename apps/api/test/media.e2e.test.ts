@@ -2,7 +2,10 @@
 import './env';
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import sharp from 'sharp';
+import { MediaService, ORIGINAL_KEEP_DAYS } from '../src/media/media.service';
+import { STORAGE, type StorageDriver } from '../src/storage/storage.types';
 import { createUser, login, resetDb, startApp, type TestApp } from './helpers';
 
 let t: TestApp;
@@ -122,5 +125,41 @@ describe('media list paging', () => {
     assert.equal(bad.status, 400);
     assert.equal((await fetch(`${t.base}/media?limit=501`, { headers: { cookie: admin } })).status, 400);
     await t.prisma.media.deleteMany();
+  });
+});
+
+describe('keeping originals', () => {
+  it('a month after processing worked the original is deleted; the TVs\' file stays and duplicates are still spotted', async () => {
+    const data = await poster('#3a7d44');
+    const res = await upload('retention.jpg', data, 'image/jpeg');
+    const id = res.body.created[0].id as string;
+    let row = await t.prisma.media.findUniqueOrThrow({ where: { id } });
+    for (let i = 0; i < 60 && row.status !== 'READY' && row.status !== 'FAILED'; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      row = await t.prisma.media.findUniqueOrThrow({ where: { id } });
+    }
+    assert.equal(String(row.status), 'READY');
+    const storage = t.app.get<StorageDriver>(STORAGE);
+    const original = storage.localPath(row.originalKey)!;
+    const processed = storage.localPath(row.storageKey!)!;
+    assert.ok(existsSync(original) && existsSync(processed));
+
+    const svc = t.app.get(MediaService);
+    assert.equal(await svc.pruneOriginals(), 0, 'not yet: only a month after');
+    // A failed upload keeps its original whatever its age: a retry needs it.
+    const failed = await t.prisma.media.create({
+      data: { originalName: 'bad.mp4', displayName: 'Bad', type: 'VIDEO', status: 'FAILED', originalKey: 'originals/failed-keep.mp4', originalSha256: 'sha-failed-keep', originalSizeBytes: 1n, originalMimeType: 'video/mp4', createdAt: new Date(Date.now() - 90 * 86_400_000) },
+    });
+
+    const later = new Date(Date.now() + (ORIGINAL_KEEP_DAYS + 1) * 86_400_000);
+    assert.equal(await svc.pruneOriginals(later), 1);
+    assert.ok(!existsSync(original), 'original deleted');
+    assert.ok(existsSync(processed), 'the file the TVs download stays');
+    assert.ok((await t.prisma.media.findUniqueOrThrow({ where: { id } })).originalDeletedAt);
+    assert.equal((await t.prisma.media.findUniqueOrThrow({ where: { id: failed.id } })).originalDeletedAt, null);
+    assert.equal(await svc.pruneOriginals(later), 0, 'done once');
+
+    const again = await upload('retention-again.jpg', data, 'image/jpeg');
+    assert.equal(again.body.duplicates.length, 1, 'the checksum still spots a re-upload');
   });
 });

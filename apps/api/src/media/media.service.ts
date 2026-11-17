@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { MEDIA_PAGE_SIZE, type MediaItem, type MediaListResponse, type UploadResult } from '@darpan/shared';
 import { randomUUID } from 'crypto';
 import { rm } from 'fs/promises';
@@ -28,8 +28,52 @@ function playlistCount(m: MediaRow): number {
 
 const MB = 1024 * 1024;
 
+/** The uploaded original is kept this long after processing worked, then deleted (the processed file stays). */
+export const ORIGINAL_KEEP_DAYS = 30;
+const PRUNE_EVERY_MS = 24 * 3_600_000;
+
 @Injectable()
-export class MediaService {
+export class MediaService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(MediaService.name);
+  private timer?: NodeJS.Timeout;
+
+  onModuleInit() {
+    this.timer = setInterval(() => void this.pruneOriginals().catch((e) => this.logger.warn(`Original cleanup failed: ${(e as Error).message}`)), PRUNE_EVERY_MS);
+    this.timer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  /**
+   * Deletes uploaded originals of media that has been ready for 30 days: the TVs play the processed
+   * file, so keeping both roughly doubles disk use. Failed or still-processing media keeps its
+   * original (a retry needs it). The checksum stays, so the same file uploaded again is still spotted.
+   */
+  async pruneOriginals(now = new Date()): Promise<number> {
+    const before = new Date(now.getTime() - ORIGINAL_KEEP_DAYS * 86_400_000);
+    const rows = await this.prisma.media.findMany({
+      where: { status: 'READY', storageKey: { not: null }, originalDeletedAt: null, createdAt: { lt: before } },
+      select: { id: true, originalKey: true, storageKey: true },
+      take: 500,
+    });
+    let done = 0;
+    for (const m of rows) {
+      if (m.originalKey === m.storageKey) continue; // never delete what the TVs download
+      try {
+        await this.storage.delete(m.originalKey);
+      } catch (e) {
+        this.logger.warn(`Could not delete original of ${m.id}: ${(e as Error).message}`);
+        continue;
+      }
+      await this.prisma.media.update({ where: { id: m.id }, data: { originalDeletedAt: now } });
+      done++;
+    }
+    if (done) this.logger.log(`Deleted ${done} original upload(s) older than ${ORIGINAL_KEEP_DAYS} days`);
+    return done;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
