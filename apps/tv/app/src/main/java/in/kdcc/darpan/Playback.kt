@@ -74,6 +74,10 @@ class Playback(
     /** A different item came on screen: worth telling the server at once (the dashboard's Live wall). */
     private val onNowPlaying: () -> Unit = {},
 ) {
+    /** The video view while a video is on screen, for the screenshot check; null otherwise. */
+    val videoOnScreen: android.view.View?
+        get() = videoView.takeIf { it.visibility == android.view.View.VISIBLE && exo?.isPlaying == true }
+
     /** What is on screen now; sent in the heartbeat. */
     @Volatile
     var currentMediaId: String? = null

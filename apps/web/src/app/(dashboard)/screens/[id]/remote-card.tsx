@@ -118,6 +118,11 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
                 {shotPending ? "Taking a screenshot…" : "No screenshot yet"}
               </p>
             )}
+            {shot?.screenshotUrl && screen.capabilities?.videoInScreenshot === false && (
+              <span className="absolute inset-x-0 bottom-0 bg-black/75 px-2 py-1 text-[11px] text-white">
+                This TV cannot capture video: a black area here can be a video playing normally.
+              </span>
+            )}
             {shotPending && shot && (
               <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-md bg-card/90 px-2 py-1 text-xs">
                 <Loader2 className="size-3 animate-spin" /> Updating

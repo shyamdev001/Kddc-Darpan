@@ -479,13 +479,21 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 l?.sendAck(commandId, ok, if (ok) null else "Files cleared, but the new download could not start")
             }
             "screenshot" -> scope.launch {
-                val jpeg = Screenshot.capture(this@MainActivity)
-                if (jpeg == null) {
+                val shot = Screenshot.capture(this@MainActivity, playback.videoOnScreen)
+                if (shot == null) {
                     l?.sendAck(commandId, false, "The TV could not read its screen")
                     return@launch
                 }
+                shot.videoBlack?.let { black ->
+                    val before = Capabilities.report(this@MainActivity).videoInScreenshot
+                    val now = BlackFrame.learned(before, black)
+                    if (now != before) {
+                        Capabilities.learn(this@MainActivity, Capabilities.KEY_VIDEO_SCREENSHOT, now)
+                        l?.sendHeartbeat() // the screen page explains the black area right away
+                    }
+                }
                 try {
-                    api.uploadScreenshot(commandId, jpeg) // the server records the reply on upload
+                    api.uploadScreenshot(commandId, shot.jpeg) // the server records the reply on upload
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
