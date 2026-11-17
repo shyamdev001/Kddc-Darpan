@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { ONLINE_WINDOW_MS, hoursOn, type AlertEntry, type AlertSettingsValue, type AlertsResponse } from '@darpan/shared';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
@@ -108,11 +108,15 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
   async sendTest(user: AuthUser, ip?: string): Promise<{ sentTo: string[] }> {
     const { recipients } = await this.settings();
     if (!recipients.length) throw new BadRequestException('Add at least one email address first');
-    await this.mail.send({
-      to: recipients,
-      subject: 'KDCC Darpan: test alert',
-      text: `This is a test from KDCC Darpan, sent by ${user.name}. Offline alerts will arrive at this address.\n\n${this.link()}`,
-    });
+    try {
+      await this.mail.send({
+        to: recipients,
+        subject: 'KDCC Darpan: test alert',
+        text: `This is a test from KDCC Darpan, sent by ${user.name}. Offline alerts will arrive at this address.\n\n${this.link()}`,
+      });
+    } catch (err) {
+      throw new BadGatewayException(`The mail server did not accept the email: ${(err as Error).message}`);
+    }
     await this.audit.log({ userId: user.id, action: 'alert_settings.test_email', entityType: 'AlertSettings', entityId: '1', details: { recipients }, ipAddress: ip });
     return { sentTo: recipients };
   }
@@ -182,7 +186,15 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`Offline check: ${toNotify.length} newly offline, ${recovered.length} back online`);
     if (!settings.enabled || !settings.recipients.length) return;
 
-    await this.mail.send({ to: settings.recipients, ...this.digest(toNotify, recovered, screens.length, now) });
+    try {
+      await this.mail.send({ to: settings.recipients, ...this.digest(toNotify, recovered, screens.length, now) });
+    } catch (err) {
+      // Not sent: mark these alerts un-emailed again, so the next check (a minute later) retries them.
+      if (toNotify.length) {
+        await this.prisma.screenAlert.updateMany({ where: { id: { in: toNotify.map((n) => n.alertId) } }, data: { notifiedAt: null } });
+      }
+      this.logger.error(`Alert email not sent, will retry: ${(err as Error).message}`);
+    }
   }
 
   private digest(

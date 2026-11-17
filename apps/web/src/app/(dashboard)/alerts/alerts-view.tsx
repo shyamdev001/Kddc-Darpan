@@ -247,7 +247,7 @@ function SettingsCard({ data, onSaved }: { data: AlertsResponse; onSaved: (d: Al
 
         {data.mailDriver === "console" && (
           <p className="rounded-md border border-haldi/40 bg-[#fdf6e7] px-3 py-2 text-sm text-[#6b4600]">
-            Emails are written to the server log for now. Real sending starts when the system is set up on the live server.
+            Emails are only written to the server log. To send them, set MAIL_DRIVER=smtp and the SMTP settings on the server.
           </p>
         )}
 

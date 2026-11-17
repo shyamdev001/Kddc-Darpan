@@ -59,6 +59,7 @@ export function checkProductionConfig(env: Env = process.env): ConfigReport {
     warnings.push('TRUST_PROXY is "loopback": behind Caddy in Docker every request will seem to come from the proxy, so rate limits are shared.');
   }
 
+  if (env.MAIL_DRIVER === 'smtp' && !env.SMTP_HOST) problems.push('MAIL_DRIVER=smtp needs SMTP_HOST (and usually SMTP_USER and SMTP_PASS).');
   if ((env.MAIL_DRIVER ?? 'console') === 'console') warnings.push('MAIL_DRIVER=console: offline alerts are only written to the log, not emailed.');
 
   return {

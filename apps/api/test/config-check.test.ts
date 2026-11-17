@@ -15,6 +15,7 @@ const good = {
   REQUIRE_2FA: 'admins',
   TRUST_PROXY: '172.28.0.0/16',
   MAIL_DRIVER: 'smtp',
+  SMTP_HOST: 'smtp.example.com',
 };
 
 describe('production settings check', () => {
@@ -35,6 +36,7 @@ describe('production settings check', () => {
     ['TOTP_ENCRYPTION_KEY', 'dG9vLXNob3J0', 'TOTP_ENCRYPTION_KEY'],
     ['DATABASE_URL', undefined, 'DATABASE_URL'],
     ['STORAGE_LOCAL_DIR', undefined, 'STORAGE_LOCAL_DIR'],
+    ['SMTP_HOST', undefined, 'SMTP_HOST'],
   ] as const) {
     it(`refuses ${name}=${value ?? '(missing)'}`, () => {
       const env = { ...good, [name]: value };
