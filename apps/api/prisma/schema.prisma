@@ -314,6 +314,8 @@ model User {
   lastLoginAt       DateTime?
   passwordChangedAt DateTime? // sessions issued before this are refused
   sessionsValidAfter DateTime? // "Sign out everywhere": sessions issued before this are refused
+  failedLogins      Int       @default(0) // wrong passwords or 2FA codes in a row
+  lockedUntil       DateTime? // after too many, sign-in is refused until then
   regionId          String?   @db.Uuid // scope for REGION_MANAGER
   branchId          String?   @db.Uuid // scope for BRANCH_VIEWER
   createdAt         DateTime  @default(now())

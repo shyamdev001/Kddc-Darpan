@@ -41,7 +41,8 @@ describe('rate limits behind the proxy', () => {
     const user = await createUser(t.prisma, 'HO_ADMIN');
     for (let i = 0; i < 5; i++) assert.equal(await badLogin('203.0.113.10', user.email), 401);
     assert.equal(await badLogin('203.0.113.10', user.email), 429, 'the guesser is slowed down');
-    assert.equal(await badLogin('203.0.113.20', user.email), 401, 'someone else can still try to sign in');
+    const other = await createUser(t.prisma, 'HO_ADMIN');
+    assert.equal(await badLogin('203.0.113.20', other.email), 401, 'someone else can still try to sign in');
   });
 
   it('counts each TV separately: 101 TVs behind one branch address all get their manifest', async () => {

@@ -58,7 +58,9 @@ export function LoginForm() {
         router.refresh();
         return;
       }
-      if (res.status === 429) setError("Too many attempts from this computer. Wait one minute, then try again.");
+      const locked = await accountLockedMessage(res);
+      if (locked) setError(locked);
+      else if (res.status === 429) setError("Too many attempts from this computer. Wait one minute, then try again.");
       else if (res.status === 401) setError("That email and password don't match an account. Check the spelling of the email.");
       else if (res.status === 400) setError("Enter a full email address, like name@kdcc.local.");
       else setError("Sign-in failed on the server. Try again in a moment.");
@@ -177,10 +179,10 @@ function CodeStep({ onDone, onRestart }: { onDone: () => void; onRestart: (messa
         onDone();
         return;
       }
-      const message = ((await res.json().catch(() => null)) as { message?: string | string[] } | null)?.message;
-      const text = Array.isArray(message) ? message[0] : message;
-      if (res.status === 401 && text?.includes("too long")) {
-        onRestart(text);
+      const body = (await res.json().catch(() => null)) as { message?: string | string[]; code?: string } | null;
+      const text = Array.isArray(body?.message) ? body.message[0] : body?.message;
+      if ((res.status === 401 && text?.includes("too long")) || body?.code === "ACCOUNT_LOCKED") {
+        onRestart(text ?? "");
         return;
       }
       if (res.status === 429) setError("Too many attempts from this computer. Wait one minute, then try again.");
@@ -245,4 +247,11 @@ function CodeStep({ onDone, onRestart }: { onDone: () => void; onRestart: (messa
       </div>
     </form>
   );
+}
+
+/** The account (not this computer) is paused after too many wrong attempts: show the server's wording. */
+async function accountLockedMessage(res: Response): Promise<string | null> {
+  if (res.status !== 429) return null;
+  const body = (await res.clone().json().catch(() => null)) as { code?: string; message?: string } | null;
+  return body?.code === "ACCOUNT_LOCKED" && body.message ? body.message : null;
 }

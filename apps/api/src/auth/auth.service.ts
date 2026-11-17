@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { AuditService } from '../audit/audit.service';
@@ -12,6 +12,18 @@ import { TwoFactorService } from './two-factor.service';
 export type LoginResult = { token: string; user: AuthUser } | { challenge: string };
 
 const INVALID = 'Invalid email or password';
+
+/** Wrong passwords or 2FA codes in a row (from any address) before the account pauses sign-in. */
+export const MAX_FAILED_LOGINS = 5;
+export const LOCK_MINUTES = 15;
+
+function lockedError(until: Date): HttpException {
+  const minutes = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
+  return new HttpException(
+    { statusCode: 429, code: 'ACCOUNT_LOCKED', message: `Too many wrong attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or ask an administrator to reset your password.` },
+    HttpStatus.TOO_MANY_REQUESTS,
+  );
+}
 
 @Injectable()
 export class AuthService {
@@ -31,10 +43,18 @@ export class AuthService {
     const normalised = email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({ where: { email: normalised } });
 
+    // Paused after too many wrong attempts: refused even with the right password, so guessing
+    // from many addresses gets nowhere.
+    if (user?.lockedUntil && user.lockedUntil > new Date()) {
+      await this.audit.log({ userId: user.id, action: 'auth.login_failed', entityType: 'User', entityId: user.id, details: { email: normalised, reason: 'locked' }, ipAddress: ip });
+      throw lockedError(user.lockedUntil);
+    }
+
     const hash = user?.passwordHash ?? (await this.dummyHash);
     const passwordOk = await argon2.verify(hash, password).catch(() => false);
 
     if (!user || !passwordOk || !user.isActive) {
+      if (user && !passwordOk) await this.countFailure(user.id, ip);
       await this.audit.log({
         userId: user?.id ?? null,
         action: 'auth.login_failed',
@@ -46,6 +66,8 @@ export class AuthService {
       throw new UnauthorizedException(INVALID);
     }
 
+    // The count is not reset here when a code is still to come: knowing the password must not
+    // buy more code guesses. A finished sign-in resets it.
     if (user.totpEnabled) {
       const challenge: ChallengePayload = { sub: user.id, purpose: '2fa' };
       return { challenge: await this.jwt.signAsync(challenge, { expiresIn: `${CHALLENGE_TTL_MIN}m` }) };
@@ -64,21 +86,38 @@ export class AuthService {
       throw expired;
     }
     if (payload.purpose !== '2fa') throw expired;
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub }, select: { isActive: true, totpEnabled: true } });
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub }, select: { isActive: true, totpEnabled: true, lockedUntil: true } });
     if (!user?.isActive) throw expired;
+    // Too many wrong codes: this sign-in is over; the password step is paused too.
+    if (user.lockedUntil && user.lockedUntil > new Date()) throw lockedError(user.lockedUntil);
     // Turned off by an admin in the meantime: the password step alone was enough after all.
     if (!user.totpEnabled) return this.finishLogin(payload.sub, ip, 'password');
 
     const method = await this.twoFactor.checkCode(payload.sub, code);
     if (!method) {
       await this.audit.log({ userId: payload.sub, action: 'auth.2fa_failed', entityType: 'User', entityId: payload.sub, ipAddress: ip });
+      const until = await this.countFailure(payload.sub, ip);
+      if (until) throw lockedError(until);
       throw new UnauthorizedException('That code is not right. Use the newest code on your phone.');
     }
     return this.finishLogin(payload.sub, ip, method === 'recovery' ? 'recovery_code' : 'app_code');
   }
 
+  /**
+   * One more wrong password or code. Counted per account, whatever address it comes from.
+   * Returns the pause end when this failure starts a pause.
+   */
+  private async countFailure(id: string, ip: string | undefined): Promise<Date | null> {
+    const row = await this.prisma.user.update({ where: { id }, data: { failedLogins: { increment: 1 } }, select: { failedLogins: true } });
+    if (row.failedLogins < MAX_FAILED_LOGINS) return null;
+    const lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60_000);
+    await this.prisma.user.update({ where: { id }, data: { failedLogins: 0, lockedUntil } });
+    await this.audit.log({ userId: id, action: 'auth.locked', entityType: 'User', entityId: id, details: { minutes: LOCK_MINUTES }, ipAddress: ip });
+    return lockedUntil;
+  }
+
   private async finishLogin(id: string, ip: string | undefined, method: 'password' | 'app_code' | 'recovery_code') {
-    const user = await this.prisma.user.update({ where: { id }, data: { lastLoginAt: new Date() } });
+    const user = await this.prisma.user.update({ where: { id }, data: { lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null } });
     await this.audit.log({
       userId: user.id,
       action: 'auth.login',

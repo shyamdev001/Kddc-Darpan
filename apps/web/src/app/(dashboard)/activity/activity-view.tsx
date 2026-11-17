@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 const ACTION_TEXT: Record<string, string> = {
   "auth.login": "Signed in",
   "auth.login_failed": "Failed sign-in",
+  "auth.locked": "Sign-in paused after too many wrong attempts",
   "auth.logout": "Signed out",
   "auth.logout_everywhere": "Signed out on every computer",
   "auth.password_change": "Changed own password",

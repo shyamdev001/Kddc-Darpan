@@ -110,7 +110,7 @@ export class UsersService {
     // passwordChangedAt signs the person out everywhere (see AuthGuard). Rounded up to the next whole
     // second, because a session's issue time is in whole seconds.
     const passwordChangedAt = new Date(Math.ceil(Date.now() / 1000) * 1000);
-    await this.prisma.user.update({ where: { id }, data: { passwordHash: await hashPassword(password), passwordChangedAt } });
+    await this.prisma.user.update({ where: { id }, data: { passwordHash: await hashPassword(password), passwordChangedAt, failedLogins: 0, lockedUntil: null } });
     await this.audit.log({ userId: actor.id, action: 'user.reset_password', entityType: 'User', entityId: id, details: { email: user.email }, ipAddress: ip });
     return this.overview();
   }

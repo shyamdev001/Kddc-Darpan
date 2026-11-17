@@ -2,6 +2,7 @@
 import './env';
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { codeAt, currentStep, encryptSecret, newSecret } from '../src/auth/totp';
 import { call, createPlaces, createUser, login, pairedTv, resetDb, startApp, type TestApp } from './helpers';
 
 let t: TestApp;
@@ -156,6 +157,74 @@ describe('what each person sees', () => {
   it('shows nothing to a manager with no region set (never everything)', async () => {
     const cookie = await login(t.base, await createUser(t.prisma, 'REGION_MANAGER'));
     assert.deepEqual(await names(cookie), []);
+  });
+});
+
+describe('per-account sign-in limit', () => {
+  const tryPassword = (email: string, password: string) => call(t.base, 'POST', '/auth/login', { body: { email, password } });
+
+  it('after 5 wrong passwords (from any address) the account pauses, even for the right password', async () => {
+    const u = await createUser(t.prisma, 'HO_ADMIN');
+    for (let i = 0; i < 5; i++) assert.equal((await tryPassword(u.email, `wrong-${i}`)).status, 401);
+    const sixth = await tryPassword(u.email, 'wrong-6');
+    assert.equal(sixth.status, 429);
+    assert.equal(sixth.body.code, 'ACCOUNT_LOCKED');
+    assert.match(sixth.body.message, /try again in 15 minutes/i);
+    const right = await tryPassword(u.email, u.password);
+    assert.equal(right.status, 429, 'the right password does not get through while paused');
+    assert.equal(right.cookies.darpan_session, undefined);
+    assert.equal(await t.prisma.auditLog.count({ where: { userId: u.id, action: 'auth.locked' } }), 1);
+
+    // The pause ends by itself.
+    await t.prisma.user.update({ where: { id: u.id }, data: { lockedUntil: new Date(Date.now() - 1000) } });
+    assert.equal((await tryPassword(u.email, u.password)).status, 200);
+  });
+
+  it('a successful sign-in resets the count, so occasional typos never pause anyone', async () => {
+    const u = await createUser(t.prisma, 'HO_ADMIN');
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < 4; i++) assert.equal((await tryPassword(u.email, 'typo')).status, 401);
+      assert.equal((await tryPassword(u.email, u.password)).status, 200);
+    }
+  });
+
+  it('an administrator resetting the password lifts the pause', async () => {
+    const u = await createUser(t.prisma, 'HO_ADMIN');
+    const admin = await login(t.base, await createUser(t.prisma, 'SUPER_ADMIN'));
+    for (let i = 0; i < 5; i++) await tryPassword(u.email, 'wrong');
+    assert.equal((await tryPassword(u.email, u.password)).status, 429);
+    const newPassword = 'a-brand-new-password-42';
+    const reset = await call(t.base, 'PUT', `/users/${u.id}/password`, { cookie: admin, body: { password: newPassword } });
+    assert.ok(reset.status === 200 || reset.status === 201, JSON.stringify(reset.body));
+    assert.equal((await tryPassword(u.email, newPassword)).status, 200);
+  });
+
+  it('5 wrong 2FA codes end the sign-in and pause the account; the password does not buy more guesses', async () => {
+    const u = await createUser(t.prisma, 'HO_ADMIN');
+    const secret = newSecret();
+    await t.prisma.user.update({ where: { id: u.id }, data: { totpEnabled: true, totpSecret: encryptSecret(secret) } });
+    const challenge = async () => {
+      const res = await tryPassword(u.email, u.password);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.needsCode, true);
+      return `darpan_2fa=${res.cookies.darpan_2fa}`;
+    };
+    const wrongCode = String((Number(codeAt(secret, currentStep())) + 500_000) % 1_000_000).padStart(6, '0');
+    const guess = (cookie: string, code: string) => call(t.base, 'POST', '/auth/login/code', { cookie, body: { code } });
+
+    // 3 wrong codes, then the password again for a fresh challenge, then 2 more: that is 5.
+    let c = await challenge();
+    for (let i = 0; i < 3; i++) assert.equal((await guess(c, wrongCode)).status, 401);
+    c = await challenge();
+    assert.equal((await guess(c, wrongCode)).status, 401);
+    const fifth = await guess(c, wrongCode);
+    assert.equal(fifth.status, 429);
+    assert.equal(fifth.body.code, 'ACCOUNT_LOCKED');
+    // The challenge is void now, even with the right code.
+    const right = await guess(c, codeAt(secret, currentStep()));
+    assert.equal(right.status, 429);
+    assert.equal(right.cookies.darpan_session, undefined);
+    assert.equal((await tryPassword(u.email, u.password)).status, 429);
   });
 });
 
