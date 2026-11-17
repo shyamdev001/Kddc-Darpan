@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.widget.ImageView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -102,6 +103,17 @@ class Playback(
     /** The default slide's file while it is on screen, so it is not faded in again every pass. */
     private var fallbackShown: String? = null
 
+    /** Kept in step: the timeline step on screen (loop, index, start), so it is not shown twice. */
+    private var syncShown: String? = null
+
+    /** True while the branch keeps its screens in step (manifest setting). */
+    val syncing: Boolean get() = manifest?.settings?.sync == true
+
+    /** Kept in step: how far the video on screen is from the shared timeline (+ = ahead), for the heartbeat. */
+    @Volatile
+    var driftMs: Long? = null
+        private set
+
     private val maxSide: Int
     private val minSide: Int
     private val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
@@ -154,6 +166,8 @@ class Playback(
         imageA.setImageDrawable(null)
         imageB.setImageDrawable(null)
         queueKey = null
+        syncShown = null
+        driftMs = null
         setState(PlayState.STOPPED)
     }
 
@@ -169,6 +183,8 @@ class Playback(
         plays.end()
         currentMediaId = null
         fallbackShown = null
+        syncShown = null
+        driftMs = null
         preloaded = null
         queueKey = null
         exo?.stop()
@@ -266,17 +282,15 @@ class Playback(
                 delay(15_000) // checks again; turns back on within 15 s of the on time
                 continue
             }
+            if (m.settings.sync) {
+                syncedPass(m, clockCertain)
+                continue
+            }
+            syncShown = null
+            driftMs = null
             val queue = queueNow(m, now, clockCertain)
             if (queue == null) {
-                if (currentMediaId != null && fallbackShown == null) plays.end()
-                onIdleReason(idleReason(m, now))
-                // Never a blank or technical screen in opening hours: the default slide if the TV has it.
-                val fallback = m.fallbackMediaId?.let { id -> m.items.firstOrNull { it.mediaId == id } }?.takeIf { cache.has(it) }
-                if (fallback == null || !showFallback(fallback)) {
-                    currentMediaId = null
-                    fallbackShown = null
-                    setState(PlayState.NOTHING)
-                }
+                idle(m, idleReason(m, now))
                 delay(5_000) // new downloads or a new manifest are picked up on the next pass
                 continue
             }
@@ -302,6 +316,134 @@ class Playback(
                 false
             }
             if (!shown) delay(1_000)
+        }
+    }
+
+    /** Nothing to play: the default slide if the TV has it (never a blank or technical screen in opening hours). */
+    private suspend fun idle(m: Manifest, reason: String) {
+        if (currentMediaId != null && fallbackShown == null) plays.end()
+        onIdleReason(reason)
+        val fallback = m.fallbackMediaId?.let { id -> m.items.firstOrNull { it.mediaId == id } }?.takeIf { cache.has(it) }
+        if (fallback == null || !showFallback(fallback)) {
+            currentMediaId = null
+            fallbackShown = null
+            if (videoView.visibility == View.VISIBLE) {
+                exo?.stop()
+                videoView.visibility = View.GONE
+            }
+            setState(PlayState.NOTHING)
+        }
+    }
+
+    /**
+     * One look at the shared timeline, for a branch kept in step (docs: SYNC_DESIGN.md): shows the
+     * step due now unless it is up already, then waits for the next moment anything can change (the
+     * step's end, an ad's dates, a whole minute for time slots). Every screen in the branch does the
+     * same sums with the server's time, so they switch together.
+     */
+    private suspend fun syncedPass(m: Manifest, clockCertain: Boolean) {
+        val now = SyncClock.now()
+        val plan = SyncPlan.at(m, now, clockCertain)
+        if (plan == null) {
+            syncShown = null
+            driftMs = null
+            idle(m, idleReason(m, now))
+            delay((SyncPlan.nextMinute(now) - now).coerceIn(1L, 5_000L))
+            return
+        }
+        val pos = Timeline.at(plan.steps, plan.anchorMs, now) ?: return
+        val item = plan.items[pos.index]
+        val until = minOf(pos.endsAt, plan.changesAt ?: Long.MAX_VALUE, SyncPlan.nextMinute(now))
+        PlaybackPulse.beat(SystemClock.elapsedRealtime(), until - now)
+        val key = "${plan.key}#${pos.index}@${pos.startedAt}"
+        if (key != syncShown) {
+            syncShown = key
+            // If the branch stops keeping in step, the own-pace loop starts from the top.
+            queueKey = null
+            position = -1
+            val shown = cache.has(item) && try {
+                if (item.isVideo) startSyncedVideo(item, pos.startedAt) else putUpImage(item)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                Log.w(TAG, "Could not play ${item.mediaId}", e)
+                false
+            }
+            if (shown) {
+                fallbackShown = null
+                setState(PlayState.PLAYING)
+                if (!item.isVideo) driftMs = null
+            } else {
+                // Same timeline: the default slide fills this step, and the next one still comes on time.
+                driftMs = null
+                idle(m, "This ad is not on the TV yet; the default slide fills its turn.")
+            }
+            // Decode the next poster now, so it is up the moment this step ends.
+            val next = Timeline.at(plan.steps, plan.anchorMs, pos.endsAt)?.let { plan.items[it.index] }
+            if (next != null && !next.isVideo && next.sha256 != item.sha256 && preloaded?.first != next.sha256 && cache.has(next)) {
+                preloaded = withContext(Dispatchers.IO) { decode(cache.fileFor(next)) }?.let { next.sha256 to it }
+            }
+        }
+        if (item.isVideo && videoView.visibility == View.VISIBLE && currentMediaId == item.mediaId) {
+            keepVideoInStep(m, item, pos.startedAt, until)
+        } else {
+            delay((until - SyncClock.now()).coerceAtLeast(1L))
+        }
+    }
+
+    /** Starts a timeline video where the other screens are: at its start, or mid-way when joining late. */
+    private fun startSyncedVideo(item: ManifestItem, startedAt: Long): Boolean {
+        val player = player()
+        player.setPlaybackSpeed(1f)
+        val want = SyncClock.now() - startedAt
+        val from = if (want > Timeline.SEEK_ABOVE_MS) want + Timeline.SEEK_LEAD_MS else 0L
+        player.setMediaItem(MediaItem.fromUri(Uri.fromFile(cache.fileFor(item))), from)
+        player.prepare()
+        showVideoView()
+        player.play()
+        nowPlaying(item.mediaId)
+        plays.start(item.mediaId)
+        driftMs = null
+        return true
+    }
+
+    /**
+     * Holds a video to the shared timeline until [until]: a seek when it is more than 500 ms off, 2 %
+     * faster or slower when it is a little off (nobody notices). The gap measured goes in the heartbeat.
+     */
+    private suspend fun keepVideoInStep(m: Manifest, item: ManifestItem, startedAt: Long, until: Long) {
+        val player = exo ?: return
+        var lastSeek = 0L
+        while (true) {
+            val now = SyncClock.now()
+            if (now >= until) return
+            PlaybackPulse.beat(SystemClock.elapsedRealtime(), until - now)
+            if (player.playerError != null) {
+                Log.w(TAG, "Video ${item.mediaId} failed to play; will download again")
+                plays.cancel()
+                player.stop()
+                videoView.visibility = View.GONE
+                cache.discard(item)
+                driftMs = null
+                idle(m, "This ad could not play and is downloading again; the default slide fills its turn.")
+                delay((until - SyncClock.now()).coerceAtLeast(1L))
+                return
+            }
+            val want = now - startedAt
+            val length = player.duration
+            // Only while it is really playing, and not in its last moments (it may end before its step).
+            if (player.playbackState == Player.STATE_READY && player.isPlaying && (length == C.TIME_UNSET || want < length - 300)) {
+                val drift = player.currentPosition - want
+                driftMs = drift
+                when (val c = Timeline.correction(drift, want, SystemClock.elapsedRealtime() - lastSeek)) {
+                    is Timeline.Correction.Seek -> {
+                        player.seekTo(c.toMs)
+                        lastSeek = SystemClock.elapsedRealtime()
+                    }
+                    is Timeline.Correction.Speed -> if (player.playbackParameters.speed != c.speed) player.setPlaybackSpeed(c.speed)
+                }
+            }
+            delay(minOf(VIDEO_CHECK_MS, until - now).coerceAtLeast(1L))
         }
     }
 
@@ -340,9 +482,8 @@ class Playback(
         return outgoing
     }
 
-    private suspend fun showImage(cue: Cue, cues: List<Cue>): Boolean {
-        val item = cue.item
-        val started = SystemClock.elapsedRealtime()
+    /** Crossfades a poster in (the decoded copy if ready) and records the play; false if the file is bad. */
+    private suspend fun putUpImage(item: ManifestItem): Boolean {
         val ready = preloaded?.takeIf { it.first == item.sha256 }?.second
         preloaded = null
         val bitmap = ready ?: withContext(Dispatchers.IO) { decode(cache.fileFor(item)) }
@@ -350,13 +491,18 @@ class Playback(
             cache.discard(item) // corrupt file: download it again on the next sync
             return false
         }
-
         val outgoing = present(bitmap)
         nowPlaying(item.mediaId)
         plays.start(item.mediaId)
-
         delay(FADE_MS)
         outgoing.setImageDrawable(null)
+        return true
+    }
+
+    private suspend fun showImage(cue: Cue, cues: List<Cue>): Boolean {
+        val item = cue.item
+        val started = SystemClock.elapsedRealtime()
+        if (!putUpImage(item)) return false
 
         // Decode the next poster now, so it is ready the moment this one's time is up.
         val next = cues.getOrNull((position + 1) % cues.size)?.item
@@ -369,13 +515,13 @@ class Playback(
         return true
     }
 
-    private suspend fun playVideo(item: ManifestItem, durationSec: Int): Boolean {
-        val player = exo ?: ExoPlayer.Builder(context).build().also {
-            exo = it
-            videoView.player = it
-        }
-        player.setMediaItem(MediaItem.fromUri(Uri.fromFile(cache.fileFor(item))))
-        player.prepare()
+    /** The one ExoPlayer, made when first needed and reused for every video. */
+    private fun player(): ExoPlayer = exo ?: ExoPlayer.Builder(context).build().also {
+        exo = it
+        videoView.player = it
+    }
+
+    private fun showVideoView() {
         videoView.visibility = View.VISIBLE
         // A video narrower or shorter than the screen leaves bars; they must be black, never the
         // last poster peeking out from underneath. Clearing the posters also frees their memory.
@@ -385,6 +531,14 @@ class Playback(
             v.setImageDrawable(null)
         }
         preloaded = null
+    }
+
+    private suspend fun playVideo(item: ManifestItem, durationSec: Int): Boolean {
+        val player = player()
+        player.setPlaybackSpeed(1f) // a branch just taken off the shared timeline may have left it nudged
+        player.setMediaItem(MediaItem.fromUri(Uri.fromFile(cache.fileFor(item))))
+        player.prepare()
+        showVideoView()
         player.play()
         nowPlaying(item.mediaId)
         plays.start(item.mediaId)
@@ -443,5 +597,6 @@ class Playback(
     private companion object {
         const val TAG = "Playback"
         const val FADE_MS = 600L
+        const val VIDEO_CHECK_MS = 500L
     }
 }

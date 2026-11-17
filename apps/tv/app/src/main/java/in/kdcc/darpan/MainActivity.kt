@@ -598,6 +598,16 @@ class MainActivity : Activity(), DeviceLink.Listener {
         }
     }
 
+    /** How closely this TV keeps to the shared timeline, for the screen page (docs: SYNC_DESIGN.md, section 6). */
+    private fun syncReport(): JSONObject {
+        val synced = playback.syncing && SyncClock.synced
+        return JSONObject()
+            .put("mode", if (synced) "synced" else "free")
+            .put("offsetErrorMs", SyncClock.errorMs() ?: JSONObject.NULL)
+            .put("driftMs", if (synced) playback.driftMs ?: JSONObject.NULL else JSONObject.NULL)
+            .put("clockCertain", TrustedClock.certain)
+    }
+
     override fun heartbeat(): JSONObject {
         val mem = ActivityManager.MemoryInfo()
         (getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(mem)
@@ -619,6 +629,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("safeMode", crashes.inSafeMode())
             .put("capabilities", JSONObject(heartbeatJson.encodeToString(Capabilities.report(this))))
             .put("crash", crashes.report()?.let { JSONObject(heartbeatJson.encodeToString(it)) } ?: JSONObject.NULL)
+            .put("sync", syncReport())
             .apply {
                 if (::downloader.isInitialized) {
                     val files = downloader.summary

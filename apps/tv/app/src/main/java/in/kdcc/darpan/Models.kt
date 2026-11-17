@@ -82,6 +82,8 @@ data class ManifestPlaylist(
 data class ManifestSettings(
     val orientation: String? = null,
     val hours: DisplayHours? = null,
+    /** The branch keeps its screens in step: play the shared timeline (SyncPlan), not our own loop. */
+    val sync: Boolean = false,
 )
 
 @Serializable
