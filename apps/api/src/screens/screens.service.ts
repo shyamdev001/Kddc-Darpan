@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { crashReport } from './crash-report';
 import {
   KIOSK_STATES,
   PAIRING_CODE_TTL_MS,
@@ -185,6 +186,7 @@ export class ScreensService {
         filesReady: true,
         filesTotal: true,
         downloadError: true,
+        safeMode: true,
         branch: { select: { id: true, name: true, taluka: { select: { region: { select: { id: true, name: true } } } } } },
         currentMedia: { select: { id: true, displayName: true, type: true } },
       },
@@ -218,6 +220,7 @@ export class ScreensService {
           nowPlaying: on && !cast ? r.currentMedia : null,
           broadcast: cast ? { ...cast, status: r.broadcastStatus } : null,
           files: screenFiles(r),
+          safeMode: on && r.safeMode,
         };
       }),
     };
@@ -258,6 +261,8 @@ export class ScreensService {
       kioskUntil: s.kioskUntil?.toISOString() ?? null,
       adbEnabled: s.adbEnabled,
       files: screenFiles(s),
+      crash: screenCrash(s.lastCrash),
+      safeMode: s.safeMode,
       pairedAt: s.pairedAt?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
       ownPlaylistId: s.assignments[0]?.playlistId ?? null,
@@ -412,4 +417,9 @@ function isKiosk(v: string | null): v is KioskState {
 
 function screenFiles(s: { filesReady: number | null; filesTotal: number | null; downloadError: string | null }): ScreenFiles | null {
   return s.filesReady === null || s.filesTotal === null ? null : { ready: s.filesReady, total: s.filesTotal, error: s.downloadError };
+}
+
+function screenCrash(v: unknown): ScreenDetail['crash'] {
+  const c = crashReport(v);
+  return c ? { ...c, at: new Date(c.at).toISOString() } : null;
 }

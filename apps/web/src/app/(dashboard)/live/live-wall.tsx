@@ -165,6 +165,9 @@ function Tile({ screen: s, now }: { screen: LiveScreen; now: number }) {
             Broadcast
           </span>
         )}
+        {s.safeMode && (
+          <span className="absolute top-2 right-2 rounded bg-haldi px-1.5 py-0.5 text-[11px] font-semibold text-ink">Safe mode</span>
+        )}
         {s.online && !s.broadcast?.status?.startsWith("error") && filesProblem(s.files) && (
           <span className="absolute inset-x-0 bottom-0 truncate bg-black/75 px-2 py-1 text-[11px] text-white" title={filesProblem(s.files) ?? undefined}>
             {filesProblem(s.files)}

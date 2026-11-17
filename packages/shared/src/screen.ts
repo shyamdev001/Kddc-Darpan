@@ -59,6 +59,8 @@ export interface LiveScreen {
     status: string | null;
   } | null;
   files: ScreenFiles | null;
+  /** Crash-looping: the TV plays posters only for now. */
+  safeMode: boolean;
 }
 
 export interface LiveWallResponse {
@@ -113,6 +115,10 @@ export interface ScreenDetail extends ScreenSummary {
   /** Android debugging (adb) is on, as the TV last reported; null for app versions that do not report it. */
   adbEnabled: boolean | null;
   files: ScreenFiles | null;
+  /** The app's last crash, as the TV reported it; null when it never crashed (or is too old to say). */
+  crash: { at: string; type: string; message: string | null; frames: string[]; total: number; recent: number } | null;
+  /** Many crashes lately: playing posters only (no video, no live links) for up to an hour. */
+  safeMode: boolean;
   pairedAt: string | null;
   createdAt: string;
   /** playlist set directly on this screen (null = inherits from branch/taluka/region/all) */

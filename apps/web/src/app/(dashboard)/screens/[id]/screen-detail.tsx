@@ -99,7 +99,7 @@ export function ScreenDetailView() {
             <SettingsCard key={screen.id + screen.name + screen.branch?.id + screen.orientation} screen={screen} onSaved={accept} />
           )}
         </div>
-        <DeviceCard screen={screen} ago={ago} canEdit={canEdit} />
+        <DeviceCard screen={screen} ago={ago} now={now} canEdit={canEdit} />
       </div>
     </div>
   );
@@ -300,13 +300,30 @@ function SettingsCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: 
   );
 }
 
+/** The app's last crash, in a fold: the type and when, with the technical lines for whoever fixes it. */
+function CrashNote({ crash, ago }: { crash: NonNullable<ScreenDetail["crash"]>; ago: string }) {
+  const name = crash.type.split(".").pop() ?? crash.type;
+  return (
+    <details className="border-b px-4 py-2.5 text-sm sm:px-5">
+      <summary className="cursor-pointer text-muted-foreground">
+        Last crash {ago}: {name}
+        {crash.recent > 1 ? `, ${crash.recent} in the last 10 minutes` : ""} ({crash.total} in all)
+      </summary>
+      <div className="mt-2 grid gap-1 text-xs">
+        {crash.message && <p className="break-words">{crash.message}</p>}
+        <pre className="overflow-x-auto rounded bg-mist px-2 py-1.5 text-[11px] leading-relaxed">{[crash.type, ...crash.frames.map((f) => `  at ${f}`)].join("\n")}</pre>
+      </div>
+    </details>
+  );
+}
+
 function mb(free: number | null, total: number | null): string | null {
   if (free === null) return null;
   const gb = (n: number) => (n >= 1024 ? `${(n / 1024).toFixed(1)} GB` : `${n} MB`);
   return total ? `${gb(free)} free of ${gb(total)}` : `${gb(free)} free`;
 }
 
-function DeviceCard({ screen, ago, canEdit }: { screen: ScreenDetail; ago: string | null; canEdit: boolean }) {
+function DeviceCard({ screen, ago, now, canEdit }: { screen: ScreenDetail; ago: string | null; now: number; canEdit: boolean }) {
   const router = useRouter();
   const [confirm, setConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -355,6 +372,13 @@ function DeviceCard({ screen, ago, canEdit }: { screen: ScreenDetail; ago: strin
               : "The TV keeps playing what it has and tries again on the next update."}
           </p>
         )}
+        {screen.safeMode && (
+          <p role="status" className="border-b bg-destructive/[0.06] px-4 py-2.5 text-sm text-destructive sm:px-5">
+            <span className="font-medium">Safe mode: posters only.</span> The app crashed again and again, so for up to an hour it skips
+            videos and live links. Restart the app from this page to try everything again.
+          </p>
+        )}
+        {screen.crash && <CrashNote crash={screen.crash} ago={formatAgo(screen.crash.at, now)} />}
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-4 py-4 text-sm sm:px-5">
           {facts.map(([label, value]) => (
             <div key={label} className="contents">

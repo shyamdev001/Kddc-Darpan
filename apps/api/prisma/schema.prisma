@@ -145,6 +145,8 @@ model Screen {
   filesReady      Int? // newest manifest's files downloaded and verified on the TV
   filesTotal      Int?
   downloadError   String? // why the last file failed, in plain words
+  lastCrash       Json? // the app's last crash as the TV reported it (type, message, top frames, counts)
+  safeMode        Boolean   @default(false) // crash-looping: posters only for now
   broadcastId     String?   @db.Uuid // the broadcast the TV says it is showing (no FK: it may be deleted)
   broadcastStatus String? // playing | loading | error: ..., from the heartbeat
   lastSeenAt      DateTime?

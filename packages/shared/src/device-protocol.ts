@@ -114,6 +114,24 @@ export interface HeartbeatPayload {
   filesTotal?: number;
   /** Why the last file failed ("storage full: needs 240 MB, 120 MB free"); null when all is well. */
   downloadError?: string | null;
+  /** The last crash (null: never crashed). */
+  crash?: CrashReportPayload | null;
+  /** Many crashes lately: playing posters only (no video, no live links) for a while. */
+  safeMode?: boolean;
+}
+
+export interface CrashReportPayload {
+  /** ms since 1970, TV clock */
+  at: number;
+  /** e.g. "java.lang.OutOfMemoryError" */
+  type: string;
+  message: string | null;
+  /** top stack frames, innermost first */
+  frames: string[];
+  /** every crash since the app was installed */
+  total: number;
+  /** crashes in the last 10 minutes */
+  recent: number;
 }
 
 export type DeviceCommandType =

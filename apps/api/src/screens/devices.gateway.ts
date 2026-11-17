@@ -14,7 +14,9 @@ import { DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, KIOSK_STATES, type CommandAckPa
 import { bufferTime, filter, Subject, type Subscription } from 'rxjs';
 import type { Namespace, Socket } from 'socket.io';
 import { ContentEvents } from '../events/content-events';
+import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { crashReport } from './crash-report';
 import { hashDeviceToken } from './device-auth';
 import { ManifestService } from './manifest.service';
 
@@ -159,6 +161,8 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
             }
           : {}),
         ...(typeof body.adbEnabled === 'boolean' ? { adbEnabled: body.adbEnabled } : {}),
+        ...(typeof body.safeMode === 'boolean' ? { safeMode: body.safeMode } : {}),
+        ...('crash' in body ? { lastCrash: (crashReport(body.crash) as Prisma.InputJsonObject | null) ?? Prisma.DbNull } : {}),
         // Older app versions send no download summary: leave what we had.
         ...(count(body.filesReady) !== undefined && count(body.filesTotal) !== undefined && body.filesReady! <= body.filesTotal!
           ? { filesReady: body.filesReady, filesTotal: body.filesTotal, downloadError: shortText(body.downloadError, 200) ?? null }

@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import org.json.JSONObject
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -249,7 +250,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 // Offline first: put the last known content on screen before touching the network.
                 store.load()?.let { raw ->
                     try {
-                        applyManifest(api.parseManifest(raw))
+                        applyManifest(forThisTv(api.parseManifest(raw)))
                     } catch (e: Exception) {
                         Log.w(TAG, "Saved manifest unreadable", e)
                     }
@@ -383,8 +384,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
             } catch (e: IOException) {
                 Log.w(TAG, "Could not save the manifest; showing it anyway", e) // e.g. disk full
             }
-            applyManifest(m)
-            downloader.want(m)
+            val shown = forThisTv(m)
+            applyManifest(shown)
+            downloader.want(shown)
             link?.sendHeartbeat()
             scope.launch { updater.consider(m.app) } // may wait minutes; must not hold the sync lock
             return@withLock true
@@ -400,6 +402,11 @@ class MainActivity : Activity(), DeviceLink.Listener {
         }
         false
     }
+
+    private val crashes: CrashLog get() = (application as DarpanApp).crashes
+
+    /** In safe mode (many crashes lately) only posters play; the saved manifest stays complete. */
+    private fun forThisTv(m: Manifest): Manifest = if (crashes.inSafeMode()) CrashLog.strip(m) else m
 
     private fun applyManifest(m: Manifest) {
         // The server's clock, even from a saved manifest, beats a TV clock reset by a power cut.
@@ -591,6 +598,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("kioskUntil", Kiosk.maintenanceEndsAt(this)?.let { iso(it) } ?: JSONObject.NULL)
             .put("broadcastId", broadcasts.currentId ?: JSONObject.NULL)
             .put("broadcastStatus", broadcasts.status ?: JSONObject.NULL)
+            .put("safeMode", crashes.inSafeMode())
+            .put("crash", crashes.report()?.let { JSONObject(heartbeatJson.encodeToString(it)) } ?: JSONObject.NULL)
             .apply {
                 if (::downloader.isInitialized) {
                     val files = downloader.summary
@@ -682,6 +691,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(ms)
 
     companion object {
+        private val heartbeatJson = kotlinx.serialization.json.Json { encodeDefaults = true }
         /** True while the activity is on screen; read by the watchdog. */
         @Volatile
         var visible = false

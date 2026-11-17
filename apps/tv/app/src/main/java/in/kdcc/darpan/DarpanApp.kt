@@ -9,13 +9,19 @@ import android.util.Log
 import kotlin.system.exitProcess
 
 class DarpanApp : Application() {
+    /** Why the app crashed lately, and whether it is in safe mode. */
+    lateinit var crashes: CrashLog
+        private set
+
     override fun onCreate() {
         super.onCreate()
+        crashes = CrashLog(filesDir)
         TrustedClock.init(this)
         WatchdogReceiver.schedule(this)
         // If anything crashes, come back in a few seconds instead of leaving a branch TV on the home screen.
         Thread.setDefaultUncaughtExceptionHandler { _, error ->
             Log.e("DarpanApp", "Crashed; restarting", error)
+            crashes.record(error) // first: the process may not get much further
             scheduleRestart(this)
             exitProcess(2)
         }
@@ -37,8 +43,9 @@ class DarpanApp : Application() {
             }
         }
 
-        /** Restart the whole app (remote "restart" command). */
+        /** Restart the whole app (remote "restart" command). Also leaves safe mode: head office wants a fresh try. */
         fun restart(context: Context) {
+            (context.applicationContext as? DarpanApp)?.crashes?.clearSafeMode()
             scheduleRestart(context, 1_500)
             exitProcess(0)
         }

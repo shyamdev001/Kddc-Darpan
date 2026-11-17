@@ -179,3 +179,38 @@ describe('download problems reach head office', () => {
     assert.deepEqual(await detail(), { ready: 12, total: 12, error: null });
   });
 });
+
+describe('crashes reach head office', () => {
+  it('the last crash and safe mode show on the screen page; junk is cut down', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Crashy TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    const detail = async () => (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body;
+
+    assert.equal((await detail()).crash, null);
+    assert.equal((await detail()).safeMode, false);
+    const at = Date.parse('2026-11-17T08:00:00Z');
+    await device.timeout(3_000).emitWithAck('heartbeat', {
+      ...base,
+      safeMode: true,
+      crash: { at, type: 'java.lang.OutOfMemoryError', message: 'Failed to allocate 8294400 bytes', frames: ['Playback.show:120', ...Array(20).fill('x'.repeat(500))], total: 7, recent: 5, extra: 'ignored' },
+    });
+    const d = await detail();
+    assert.equal(d.safeMode, true);
+    assert.equal(d.crash.type, 'java.lang.OutOfMemoryError');
+    assert.equal(d.crash.at, '2026-11-17T08:00:00.000Z');
+    assert.equal(d.crash.total, 7);
+    assert.equal(d.crash.recent, 5);
+    assert.equal(d.crash.frames.length, 8, 'at most 8 frames');
+    assert.ok(d.crash.frames.every((f: string) => f.length <= 200));
+    assert.equal(d.crash.extra, undefined);
+    const tile = ((await call(t.base, 'GET', '/screens/live', { cookie: admin })).body.items as { id: string; safeMode: boolean }[]).find((s) => s.id === tv.deviceId);
+    assert.equal(tile?.safeMode, true);
+
+    // Out of safe mode; an older app that sends no crash field keeps the last report.
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, safeMode: false });
+    assert.equal((await detail()).safeMode, false);
+    assert.equal((await detail()).crash.type, 'java.lang.OutOfMemoryError');
+  });
+});
