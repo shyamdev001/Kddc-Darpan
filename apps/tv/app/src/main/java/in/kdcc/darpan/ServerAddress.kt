@@ -2,7 +2,7 @@ package `in`.kdcc.darpan
 
 /** Checks the server address typed on the setup screen. */
 object ServerAddress {
-    private val shape = Regex("^https?://[^\s/:]+(:\d{1,5})?$")
+    private val shape = Regex("""^https?://[^\s/:]+(:\d{1,5})?$""")
 
     /**
      * The cleaned-up address, or null if it is not usable. Without a scheme, https:// is assumed
