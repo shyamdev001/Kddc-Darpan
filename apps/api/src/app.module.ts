@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './throttle';
 import { AlertsModule } from './alerts/alerts.module';
 import { ReleasesModule } from './releases/releases.module';
 import { UsersModule } from './users/users.module';
@@ -27,7 +28,8 @@ import { RealtimeModule } from './realtime/realtime.module';
     // The automated tests sign in many times a minute from one address, so they switch it off.
     ThrottlerModule.forRoot({
       throttlers: [{ name: 'default', ttl: 60_000, limit: 300 }],
-      skipIf: () => process.env.NODE_ENV === 'test',
+      // THROTTLE_IN_TESTS: the one test file that checks the limits themselves.
+      skipIf: () => process.env.NODE_ENV === 'test' && process.env.THROTTLE_IN_TESTS !== '1',
     }),
     PrismaModule,
     EventsModule,
@@ -48,6 +50,6 @@ import { RealtimeModule } from './realtime/realtime.module';
     RealtimeModule,
   ],
   controllers: [HealthController, StatsController],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],
 })
 export class AppModule {}
