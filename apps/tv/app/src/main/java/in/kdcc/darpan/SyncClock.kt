@@ -27,6 +27,9 @@ object SyncClock {
     /** One answer: the server said `serverMs`; we asked at `sentAt` and heard back at `receivedAt` (elapsedRealtime). */
     fun sample(serverMs: Long, sentAt: Long, receivedAt: Long) {
         estimator.add(serverMs, sentAt, receivedAt)
-        estimator.offset()?.let { base = it }
+        estimator.offset()?.let {
+            base = it
+            TrustedClock.serverTime(SystemClock.elapsedRealtime() + it)
+        }
     }
 }

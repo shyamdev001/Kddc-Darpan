@@ -60,22 +60,25 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         SELECT * FROM unnest(
           ${rows.map((r) => r.mediaId)}::uuid[],
           ${rows.map((r) => new Date(r.startedAt).toISOString())}::timestamptz[],
-          ${rows.map((r) => r.durationMs)}::int[]
-        ) AS t("mediaId", "startedAt", "durationMs")
+          ${rows.map((r) => r.durationMs)}::int[],
+          ${rows.map((r) => r.clockUncertain === true)}::boolean[]
+        ) AS t("mediaId", "startedAt", "durationMs", "clockUncertain")
       ), ins AS (
-        INSERT INTO "PlayLog" ("screenId", "mediaId", "startedAt", "durationMs")
-        SELECT ${screenId}::uuid, "mediaId", "startedAt" AT TIME ZONE 'UTC', "durationMs" FROM input
+        INSERT INTO "PlayLog" ("screenId", "mediaId", "startedAt", "durationMs", "clockUncertain")
+        SELECT ${screenId}::uuid, "mediaId", "startedAt" AT TIME ZONE 'UTC', "durationMs", "clockUncertain" FROM input
         ON CONFLICT ("screenId", "mediaId", "startedAt") DO NOTHING
-        RETURNING "mediaId", "startedAt", "durationMs"
+        RETURNING "mediaId", "startedAt", "durationMs", "clockUncertain"
       ), daily AS (
-        INSERT INTO "PlayDaily" ("day", "screenId", "mediaId", "screenName", "branchName", "mediaName", "plays", "durationMs", "updatedAt")
+        INSERT INTO "PlayDaily" ("day", "screenId", "mediaId", "screenName", "branchName", "mediaName", "plays", "durationMs", "uncertainPlays", "updatedAt")
         SELECT (ins."startedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date, ${screenId}::uuid, ins."mediaId",
-               ${screenName}, ${branchName}, m."displayName", count(*)::int, sum(ins."durationMs")::bigint, now()
+               ${screenName}, ${branchName}, m."displayName", count(*)::int, sum(ins."durationMs")::bigint,
+               (count(*) FILTER (WHERE ins."clockUncertain"))::int, now()
         FROM ins JOIN "Media" m ON m."id" = ins."mediaId"
         GROUP BY 1, ins."mediaId", m."displayName"
         ON CONFLICT ("day", "screenId", "mediaId") DO UPDATE SET
           "plays" = "PlayDaily"."plays" + EXCLUDED."plays",
           "durationMs" = "PlayDaily"."durationMs" + EXCLUDED."durationMs",
+          "uncertainPlays" = "PlayDaily"."uncertainPlays" + EXCLUDED."uncertainPlays",
           "screenName" = EXCLUDED."screenName",
           "branchName" = EXCLUDED."branchName",
           "mediaName" = EXCLUDED."mediaName",
@@ -121,8 +124,9 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         WHERE ${where}
         GROUP BY d."screenId", s."name", b."name", CASE WHEN d."screenId" IS NULL THEN d."screenName" END
         ORDER BY branch NULLS LAST, name`,
-      this.prisma.$queryRaw<{ day: string; plays: number; durationMs: bigint }[]>`
-        SELECT to_char(d."day", 'YYYY-MM-DD') AS day, sum(d."plays")::int AS plays, sum(d."durationMs")::bigint AS "durationMs"
+      this.prisma.$queryRaw<{ day: string; plays: number; durationMs: bigint; uncertain: number }[]>`
+        SELECT to_char(d."day", 'YYYY-MM-DD') AS day, sum(d."plays")::int AS plays, sum(d."durationMs")::bigint AS "durationMs",
+               sum(d."uncertainPlays")::int AS uncertain
         FROM "PlayDaily" d
         LEFT JOIN "Screen" s ON s."id" = d."screenId"
         WHERE ${where}
@@ -134,19 +138,19 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     return {
       from: q.from,
       to: q.to,
-      totals: { plays, durationMs, screens: byScreen.length, ads: byMedia.length },
+      totals: { plays, durationMs, screens: byScreen.length, ads: byMedia.length, uncertainPlays: byDay.reduce((a, r) => a + r.uncertain, 0) },
       byMedia: byMedia.map((r) => ({ ...r, durationMs: Number(r.durationMs) })),
       byScreen: byScreen.map((r) => ({ ...r, durationMs: Number(r.durationMs) })),
-      byDay: byDay.map((r) => ({ ...r, durationMs: Number(r.durationMs) })),
+      byDay: byDay.map((r) => ({ day: r.day, plays: r.plays, durationMs: Number(r.durationMs) })),
     };
   }
 
   /** One row per day, screen and ad. UTF-8 with a BOM so Excel shows Gujarati names correctly. */
   async exportCsv(q: PlayReportQueryDto, user: AuthUser): Promise<string> {
-    const rows = await this.prisma.$queryRaw<{ day: string; branch: string | null; screen: string; ad: string; plays: number; durationMs: bigint }[]>`
+    const rows = await this.prisma.$queryRaw<{ day: string; branch: string | null; screen: string; ad: string; plays: number; durationMs: bigint; uncertain: number }[]>`
       SELECT to_char(d."day", 'YYYY-MM-DD') AS day, COALESCE(b."name", d."branchName") AS branch,
              COALESCE(s."name", d."screenName") AS screen, COALESCE(m."displayName", d."mediaName") AS ad,
-             d."plays", d."durationMs"
+             d."plays", d."durationMs", d."uncertainPlays" AS uncertain
       FROM "PlayDaily" d
       LEFT JOIN "Screen" s ON s."id" = d."screenId"
       LEFT JOIN "Branch" b ON b."id" = s."branchId"
@@ -154,9 +158,11 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       WHERE ${this.where(q, user)}
       ORDER BY d."day", branch NULLS LAST, screen, ad
       LIMIT ${MAX_EXPORT_ROWS}`;
-    const lines = [['Date', 'Branch', 'Screen', 'Ad', 'Plays', 'Minutes on screen'].join(',')];
+    const lines = [['Date', 'Branch', 'Screen', 'Ad', 'Plays', 'Minutes on screen', 'Plays with TV clock not set'].join(',')];
     for (const r of rows) {
-      lines.push([r.day, r.branch ?? '', r.screen, r.ad, String(r.plays), (Number(r.durationMs) / 60_000).toFixed(1)].map(csvCell).join(','));
+      lines.push(
+        [r.day, r.branch ?? '', r.screen, r.ad, String(r.plays), (Number(r.durationMs) / 60_000).toFixed(1), String(r.uncertain)].map(csvCell).join(','),
+      );
     }
     return '﻿' + lines.join('\r\n') + '\r\n';
   }

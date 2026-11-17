@@ -13,7 +13,11 @@ import java.util.TimeZone
  * while offline are uploaded later. Playback calls [start] when an item appears and [end] when the
  * screen goes blank; starting the next item ends the previous one.
  */
-class PlayLogStore(dir: File) {
+class PlayLogStore(
+    dir: File,
+    /** Same value for every start of the app until the TV reboots (elapsedRealtime restarts then). */
+    private val bootId: String,
+) {
     private val file = File(dir, "playlogs.jsonl")
     private val lock = Any()
     private val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
@@ -21,11 +25,13 @@ class PlayLogStore(dir: File) {
     private var openId: String? = null
     private var openWall = 0L
     private var openElapsed = 0L
+    private var openUncertain = false
 
     fun start(mediaId: String) = synchronized(lock) {
         closeLocked()
         openId = mediaId
         openWall = TrustedClock.now()
+        openUncertain = !TrustedClock.certain
         openElapsed = SystemClock.elapsedRealtime()
     }
 
@@ -34,9 +40,33 @@ class PlayLogStore(dir: File) {
     /** Forget the item on screen without recording it (it failed to play). */
     fun cancel() = synchronized(lock) { openId = null }
 
-    /** Up to [max] saved lines, oldest first. */
+    /**
+     * Up to [max] saved lines, oldest first, ready to send: one per saved line, so [drop] can count
+     * them. A play recorded while the clock was unsure gets its real time back if the clock has been
+     * set since, in the same boot; otherwise it goes with `clockUncertain: true`.
+     */
     fun pending(max: Int): List<String> = synchronized(lock) {
-        if (file.exists()) file.bufferedReader().useLines { lines -> lines.take(max).toList() } else emptyList()
+        val lines = if (file.exists()) file.bufferedReader().useLines { it.take(max).toList() } else emptyList()
+        val certain = TrustedClock.certain
+        val nowMs = if (certain) TrustedClock.now() else 0L
+        val nowElapsed = SystemClock.elapsedRealtime()
+        lines.map { line -> forServer(line, certain, nowMs, nowElapsed) }
+    }
+
+    private fun forServer(line: String, certain: Boolean, nowMs: Long, nowElapsed: Long): String {
+        val o = try {
+            JSONObject(line)
+        } catch (e: Exception) {
+            return line // cut short by a power cut; the uploader skips it
+        }
+        if (!o.optBoolean("clockUncertain", false)) return line
+        val fixed = if (certain) restamp(o.optLong("elapsedAt", -1), o.optString("boot"), bootId, nowMs, nowElapsed) else null
+        val out = JSONObject().put("mediaId", o.optString("mediaId")).put("durationMs", o.optLong("durationMs"))
+        return if (fixed != null) {
+            out.put("startedAt", iso.format(fixed)).toString()
+        } else {
+            out.put("startedAt", o.optString("startedAt")).put("clockUncertain", true).toString()
+        }
     }
 
     /** Remove the first [count] lines once the server has them. */
@@ -51,11 +81,13 @@ class PlayLogStore(dir: File) {
         openId = null
         val ms = SystemClock.elapsedRealtime() - openElapsed
         if (ms < MIN_MS) return
-        val line = JSONObject()
+        val o = JSONObject()
             .put("mediaId", id)
             .put("startedAt", iso.format(openWall))
             .put("durationMs", ms.coerceAtMost(MAX_MS))
-            .toString()
+        // Kept only on the TV, to put the right time on it later (see pending).
+        if (openUncertain) o.put("clockUncertain", true).put("elapsedAt", openElapsed).put("boot", bootId)
+        val line = o.toString()
         try {
             file.appendText(line + "\n")
             if (file.length() > MAX_BYTES) {
@@ -78,10 +110,17 @@ class PlayLogStore(dir: File) {
         }
     }
 
-    private companion object {
-        const val TAG = "PlayLog"
-        const val MIN_MS = 1_000L
-        const val MAX_MS = 24 * 3_600_000L
-        const val MAX_BYTES = 8L * 1024 * 1024 // ~80,000 plays
+    companion object {
+        /**
+         * The real start of a play recorded while the clock was unsure, once the time is known: the
+         * elapsed-time stamp only means something within the same boot. Null when it cannot be known.
+         */
+        fun restamp(elapsedAt: Long, lineBoot: String, boot: String, nowMs: Long, nowElapsed: Long): Long? =
+            if (lineBoot == boot && elapsedAt in 0..nowElapsed) nowMs - (nowElapsed - elapsedAt) else null
+
+        private const val TAG = "PlayLog"
+        private const val MIN_MS = 1_000L
+        private const val MAX_MS = 24 * 3_600_000L
+        private const val MAX_BYTES = 8L * 1024 * 1024 // ~80,000 plays
     }
 }

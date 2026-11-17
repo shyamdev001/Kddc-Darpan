@@ -1,6 +1,6 @@
 import { MAX_PLAYLOG_BATCH } from '@darpan/shared';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsInt, IsISO8601, IsOptional, IsUUID, Matches, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsInt, IsISO8601, IsOptional, IsUUID, Matches, Max, Min, ValidateNested } from 'class-validator';
 
 export class PlayLogEntryDto {
   @IsUUID()
@@ -13,6 +13,11 @@ export class PlayLogEntryDto {
   @Min(0)
   @Max(24 * 3_600_000)
   durationMs!: number;
+
+  /** The TV's clock was not set (power cut, no internet): startedAt is its best guess. */
+  @IsOptional()
+  @IsBoolean()
+  clockUncertain?: boolean;
 }
 
 export class PlayLogBatchDto {

@@ -103,7 +103,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         cache = MediaCache(filesDir, api.http, prefs)
         // A saved copy only counts if it parses; otherwise the previous good one is used.
         store = ManifestStore(filesDir) { raw -> runCatching { api.parseManifest(raw) }.isSuccess }
-        plays = PlayLogStore(filesDir)
+        plays = PlayLogStore(filesDir, bootId())
         updater = Updater(this, api.http, prefs) { runOnUiThread { link?.sendHeartbeat() } }
         playback = Playback(
             this,
@@ -676,6 +676,15 @@ class MainActivity : Activity(), DeviceLink.Listener {
             setupPanel.visibility = View.GONE
             begin()
         }
+    }
+
+    /**
+     * Same for every start of the app until the TV reboots: Android's boot counter where the TV has
+     * one, else a value kept for this process only (a crash then just leaves older plays flagged).
+     */
+    private fun bootId(): String {
+        val count = android.provider.Settings.Global.getInt(contentResolver, "boot_count", -1)
+        return if (count >= 0) "boot-$count" else "run-${java.util.UUID.randomUUID()}"
     }
 
     private fun parseIso(s: String): Long? = try {

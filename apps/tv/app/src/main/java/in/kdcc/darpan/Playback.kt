@@ -188,7 +188,7 @@ class Playback(
      * The first playlist whose slots match now and that has something ready to show. A timed
      * playlist whose files are not downloaded yet falls through to the next one.
      */
-    private fun queueNow(m: Manifest, now: Long): Queue? {
+    private fun queueNow(m: Manifest, now: Long, clockCertain: Boolean = true): Queue? {
         if (m.playlists.isEmpty()) {
             // manifest from an older server: one list, in order
             val cues = m.items.filter { playable(it, now) }.map { Cue(it, it.durationSec) }
@@ -196,6 +196,8 @@ class Playback(
         }
         val byId = m.items.associateBy { it.mediaId }
         for (p in m.playlists) {
+            // Unsure what time it is: only the always-on layer, never a time slot that may be wrong.
+            if (!clockCertain && p.slots.isNotEmpty()) continue
             if (!Schedule.slotsActive(p.slots, now)) continue
             val cues = p.items.mapNotNull { e -> byId[e.mediaId]?.takeIf { playable(it, now) }?.let { Cue(it, e.durationSec) } }
             if (cues.isNotEmpty()) return Queue(p.id, cues)
@@ -212,6 +214,7 @@ class Playback(
             m.items.isEmpty() -> "No playlist is assigned to this screen."
             ready == 0 -> "Files not downloaded yet (0 of ${files.size})."
             inDates == 0 -> "Every ad is outside its start/end dates."
+            !TrustedClock.certain && m.playlists.all { it.slots.isNotEmpty() } -> "TV clock not set yet: waiting for the internet to play timed playlists."
             m.playlists.isNotEmpty() && m.playlists.none { Schedule.slotsActive(it.slots, now) } -> "No playlist is set for this time."
             else -> "Nothing ready to play in the current playlist."
         }
@@ -245,11 +248,13 @@ class Playback(
             PlaybackPulse.beat(SystemClock.elapsedRealtime())
             val m = manifest
             val now = TrustedClock.now()
+            val clockCertain = TrustedClock.certain
             if (m == null) {
                 delay(1_000)
                 continue
             }
-            if (!Schedule.hoursOn(m.settings.hours, now)) {
+            // Unsure what time it is (power cut, no internet yet): stay on rather than go dark.
+            if (clockCertain && !Schedule.hoursOn(m.settings.hours, now)) {
                 if (state != PlayState.OFF_HOURS) {
                     blank()
                     setState(PlayState.OFF_HOURS)
@@ -257,7 +262,7 @@ class Playback(
                 delay(15_000) // checks again; turns back on within 15 s of the on time
                 continue
             }
-            val queue = queueNow(m, now)
+            val queue = queueNow(m, now, clockCertain)
             if (queue == null) {
                 if (currentMediaId != null) plays.end()
                 currentMediaId = null

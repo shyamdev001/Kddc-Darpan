@@ -364,6 +364,8 @@ model PlayLog {
   startedAt  DateTime
   durationMs Int
   receivedAt DateTime @default(now())
+  // The TV's clock was not set when it played this (power cut, no internet), so startedAt may be off.
+  clockUncertain Boolean @default(false)
 
   screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
   media  Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
@@ -385,6 +387,7 @@ model PlayDaily {
   mediaName  String
   plays      Int
   durationMs BigInt
+  uncertainPlays Int @default(0) // of those, played while the TV's clock was not set
   updatedAt  DateTime @updatedAt
 
   screen Screen? @relation(fields: [screenId], references: [id], onDelete: SetNull)

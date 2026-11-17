@@ -198,6 +198,13 @@ function Report({ today }: { today: string }) {
                 <ByScreen report={report} selected={screen} onPick={setScreen} />
               </div>
               <p className="text-sm text-muted-foreground">TVs send their records every hour, so the last hour may not be in yet.</p>
+              {report.totals.uncertainPlays > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {NUM.format(report.totals.uncertainPlays)} {report.totals.uncertainPlays === 1 ? "play was" : "plays were"} recorded while a
+                  TV&apos;s clock was not set (after a power cut, before the internet came back). They are counted, but their time of day
+                  may be off. The export marks them per row.
+                </p>
+              )}
             </>
           )}
         </div>

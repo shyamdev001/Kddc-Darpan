@@ -34,7 +34,12 @@ export interface PlayReportDay extends PlayTotals {
 export interface PlayReport {
   from: string;
   to: string;
-  totals: PlayTotals & { screens: number; ads: number };
+  totals: PlayTotals & {
+    screens: number;
+    ads: number;
+    /** Plays recorded while a TV's clock was not set (power cut, no internet): their times may be off. */
+    uncertainPlays: number;
+  };
   byMedia: PlayReportMedia[];
   byScreen: PlayReportScreen[];
   byDay: PlayReportDay[];
