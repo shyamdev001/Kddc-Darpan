@@ -383,6 +383,7 @@ class Playback(
             if (next != null && !next.isVideo && next.sha256 != item.sha256 && preloaded?.first != next.sha256 && cache.has(next)) {
                 preloaded = withContext(Dispatchers.IO) { decode(cache.fileFor(next)) }?.let { next.sha256 to it }
             }
+            if (next != null && next.isVideo && videoView.visibility != View.VISIBLE && cache.has(next)) prepareAhead(next)
         }
         if (item.isVideo && videoView.visibility == View.VISIBLE && currentMediaId == item.mediaId) {
             keepVideoInStep(m, item, pos.startedAt, until)
@@ -392,13 +393,12 @@ class Playback(
     }
 
     /** Starts a timeline video where the other screens are: at its start, or mid-way when joining late. */
-    private fun startSyncedVideo(item: ManifestItem, startedAt: Long): Boolean {
+    private suspend fun startSyncedVideo(item: ManifestItem, startedAt: Long): Boolean {
         val player = player()
         player.setPlaybackSpeed(1f)
         val want = SyncClock.now() - startedAt
-        val from = if (want > Timeline.SEEK_ABOVE_MS) want + Timeline.SEEK_LEAD_MS else 0L
-        player.setMediaItem(MediaItem.fromUri(Uri.fromFile(cache.fileFor(item))), from)
-        player.prepare()
+        openVideo(player, item, if (want > Timeline.SEEK_ABOVE_MS) want + OPEN_LEAD_MS else 0L)
+        if (!awaitReady(player)) return videoFailed(player, item)
         showVideoView()
         player.play()
         nowPlaying(item.mediaId)
@@ -509,6 +509,8 @@ class Playback(
         if (next != null && !next.isVideo && next.sha256 != item.sha256) {
             preloaded = withContext(Dispatchers.IO) { decode(cache.fileFor(next)) }?.let { next.sha256 to it }
         }
+        // And open the next video, paused at its start, so it replaces this poster without a black gap.
+        if (next != null && next.isVideo) prepareAhead(next)
 
         val remaining = cue.durationSec * 1000L - (SystemClock.elapsedRealtime() - started)
         delay(remaining.coerceAtLeast(1_000))
@@ -519,6 +521,50 @@ class Playback(
     private fun player(): ExoPlayer = exo ?: ExoPlayer.Builder(context).build().also {
         exo = it
         videoView.player = it
+    }
+
+    private fun videoItem(item: ManifestItem): MediaItem =
+        MediaItem.Builder().setUri(Uri.fromFile(cache.fileFor(item))).setMediaId(item.sha256).build()
+
+    /**
+     * Loads a video, paused, at [fromMs]. One opened ahead by [prepareAhead] and still waiting is
+     * used as it is. Nothing is on screen yet: the caller reveals it once [awaitReady].
+     */
+    private fun openVideo(player: ExoPlayer, item: ManifestItem, fromMs: Long) {
+        val waiting = player.currentMediaItem?.mediaId == item.sha256 && !player.playWhenReady && player.playerError == null &&
+            (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+        if (waiting) {
+            if (fromMs > 0) player.seekTo(fromMs)
+            return
+        }
+        player.playWhenReady = false
+        player.setMediaItem(videoItem(item), fromMs)
+        player.prepare()
+    }
+
+    /** While a poster is up, opens the next video paused at its start (one decoder, no picture yet). */
+    private fun prepareAhead(item: ManifestItem) {
+        val player = player()
+        player.setPlaybackSpeed(1f)
+        openVideo(player, item, 0L)
+    }
+
+    /**
+     * Waits, with the poster still on screen, until the video's first frame is decoded, so the
+     * switch shows no black gap. False if the file cannot play. Gives up waiting after 3 s.
+     */
+    private suspend fun awaitReady(player: ExoPlayer): Boolean {
+        withTimeoutOrNull(READY_WAIT_MS) {
+            while (player.playerError == null && player.playbackState != Player.STATE_READY && player.playbackState != Player.STATE_ENDED) delay(20)
+        }
+        return player.playerError == null
+    }
+
+    private fun videoFailed(player: ExoPlayer, item: ManifestItem): Boolean {
+        Log.w(TAG, "Video ${item.mediaId} could not be opened; will download again")
+        player.stop()
+        cache.discard(item)
+        return false
     }
 
     private fun showVideoView() {
@@ -536,8 +582,9 @@ class Playback(
     private suspend fun playVideo(item: ManifestItem, durationSec: Int): Boolean {
         val player = player()
         player.setPlaybackSpeed(1f) // a branch just taken off the shared timeline may have left it nudged
-        player.setMediaItem(MediaItem.fromUri(Uri.fromFile(cache.fileFor(item))))
-        player.prepare()
+        openVideo(player, item, 0L)
+        // The poster stays up while the file opens and its first frame decodes: no black gap.
+        if (!awaitReady(player)) return videoFailed(player, item)
         showVideoView()
         player.play()
         nowPlaying(item.mediaId)
@@ -598,5 +645,9 @@ class Playback(
         const val TAG = "Playback"
         const val FADE_MS = 600L
         const val VIDEO_CHECK_MS = 500L
+        const val READY_WAIT_MS = 3_000L
+
+        /** Opening a video mid-way takes the player a moment; start it this far on so it lands in step. */
+        const val OPEN_LEAD_MS = 400L
     }
 }

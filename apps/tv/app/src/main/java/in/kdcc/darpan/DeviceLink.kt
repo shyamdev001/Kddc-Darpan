@@ -39,6 +39,13 @@ class DeviceLink(
     private var socket: Socket? = null
     private var closed = false
 
+    private val retry = Runnable {
+        val s = socket
+        if (!closed && s != null && !s.connected()) s.connect()
+    }
+
+    private val ask = Runnable { askTime() }
+
     private val beat = object : Runnable {
         override fun run() {
             sendHeartbeat()
@@ -89,7 +96,9 @@ class DeviceLink(
                     listener.onUnauthorized()
                 } else {
                     // Errors from the server's handshake are not retried by the library; retry ourselves.
-                    main.postDelayed({ if (!closed && !s.connected()) s.connect() }, RETRY_MS)
+                    // One retry waiting at a time: a long outage must not pile up parallel attempts.
+                    main.removeCallbacks(retry)
+                    main.postDelayed(retry, RETRY_MS)
                 }
             }
         })
@@ -127,7 +136,8 @@ class DeviceLink(
     /** Several quick time checks, 300 ms apart: the estimator keeps the quick ones and takes their median. */
     private fun timeBurst() {
         lastBurst = SystemClock.elapsedRealtime()
-        for (i in 0 until TIME_BURST) main.postDelayed({ askTime() }, i * 300L)
+        main.removeCallbacks(ask) // a quick reconnect starts a fresh burst instead of a second one alongside
+        for (i in 0 until TIME_BURST) main.postDelayed(ask, i * 300L)
     }
 
     /** Asks the server for its exact time, for [SyncClock]. Tiny, and answered at once. */
@@ -156,6 +166,8 @@ class DeviceLink(
     fun close() {
         closed = true
         main.removeCallbacks(beat)
+        main.removeCallbacks(retry)
+        main.removeCallbacks(ask)
         socket?.off()
         socket?.disconnect()
         socket = null
