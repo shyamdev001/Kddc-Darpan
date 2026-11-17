@@ -148,6 +148,18 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
 
         <KioskRow state={kiosk.state} until={kiosk.until} busy={kioskBusy} disabled={offline || sending !== null} onSend={(t) => void send(t)} />
 
+        {screen.adbEnabled && (
+          <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-sm text-destructive">
+            <span className="font-medium">Android debugging (adb) is on.</span> Anyone on the branch network could control this TV
+            and read its key.{" "}
+            {kiosk.state === "maintenance"
+              ? "It is allowed during maintenance; locking the TV turns it off again."
+              : kiosk.state === "locked"
+                ? "Install the latest app: it turns debugging off while the TV is locked."
+                : "Turn it off in the TV's Developer options, or set up kiosk mode, which turns it off by itself."}
+          </p>
+        )}
+
         {error && (
           <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-sm text-destructive">
             {error}

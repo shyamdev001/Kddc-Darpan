@@ -154,6 +154,7 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
               broadcastStatus: shortText(body.broadcastStatus, 200) ?? null,
             }
           : {}),
+        ...(typeof body.adbEnabled === 'boolean' ? { adbEnabled: body.adbEnabled } : {}),
         // Older app versions send no kiosk fields: leave what we had.
         ...(typeof body.kiosk === 'string' && (KIOSK_STATES as readonly string[]).includes(body.kiosk)
           ? { kioskState: body.kiosk, kioskUntil: kioskUntil(body.kiosk, body.kioskUntil) }

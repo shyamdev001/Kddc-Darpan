@@ -251,6 +251,7 @@ export class ScreensService {
       manifestVersion: s.manifestVersion,
       kiosk: isKiosk(s.kioskState) ? s.kioskState : null,
       kioskUntil: s.kioskUntil?.toISOString() ?? null,
+      adbEnabled: s.adbEnabled,
       pairedAt: s.pairedAt?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
       ownPlaylistId: s.assignments[0]?.playlistId ?? null,

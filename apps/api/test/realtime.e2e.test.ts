@@ -137,3 +137,21 @@ describe('a TV removed by head office', () => {
     await gone;
   });
 });
+
+describe('Android debugging (adb) warning', () => {
+  it('shows on the screen page when the TV reports adb on, and clears when it is off', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'ADB TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    const adb = async () => (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body.adbEnabled;
+
+    assert.equal(await adb(), null, 'unknown until the TV says');
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, adbEnabled: true });
+    assert.equal(await adb(), true);
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, adbEnabled: false });
+    assert.equal(await adb(), false);
+    await device.timeout(3_000).emitWithAck('heartbeat', base); // an older app: keeps the last answer
+    assert.equal(await adb(), false);
+  });
+});

@@ -587,6 +587,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("appVersionCode", BuildConfig.VERSION_CODE)
             .put("updateStatus", updater.status ?: JSONObject.NULL)
             .put("kiosk", Kiosk.state(this))
+            .put("adbEnabled", Kiosk.adbEnabled(this))
             .put("kioskUntil", Kiosk.maintenanceEndsAt(this)?.let { iso(it) } ?: JSONObject.NULL)
             .put("broadcastId", broadcasts.currentId ?: JSONObject.NULL)
             .put("broadcastStatus", broadcasts.status ?: JSONObject.NULL)

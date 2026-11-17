@@ -107,6 +107,8 @@ export interface HeartbeatPayload {
   /** The broadcast on screen and how it is going ('playing', 'loading', 'error: ...'); null when none. */
   broadcastId?: string | null;
   broadcastStatus?: string | null;
+  /** Android debugging (adb) switched on. Anyone on the branch network could then control the TV. */
+  adbEnabled?: boolean;
 }
 
 export type DeviceCommandType =

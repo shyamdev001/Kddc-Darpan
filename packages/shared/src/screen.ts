@@ -92,6 +92,8 @@ export interface ScreenDetail extends ScreenSummary {
   kiosk: KioskState | null;
   /** While in maintenance: when the TV locks itself again. */
   kioskUntil: string | null;
+  /** Android debugging (adb) is on, as the TV last reported; null for app versions that do not report it. */
+  adbEnabled: boolean | null;
   pairedAt: string | null;
   createdAt: string;
   /** playlist set directly on this screen (null = inherits from branch/taluka/region/all) */

@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.UserManager
+import android.provider.Settings
 import android.util.Log
 
 /**
@@ -50,6 +52,13 @@ object Kiosk {
         else -> "locked"
     }
 
+    /** True when Android debugging (adb) is switched on; reported to the dashboard. */
+    fun adbEnabled(context: Context): Boolean = try {
+        Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
+    } catch (e: Exception) {
+        false
+    }
+
     fun maintenanceEndsAt(context: Context): Long? = maintenanceUntil(context).takeIf { it > System.currentTimeMillis() }
 
     private fun pinned(activity: Activity): Boolean {
@@ -75,6 +84,13 @@ object Kiosk {
             dpm.addPersistentPreferredActivity(admin, home, ComponentName(activity, MainActivity::class.java))
             dpm.setKeyguardDisabled(admin, true)
             dpm.setStatusBarDisabled(admin, !inMaintenance(activity))
+            // Android debugging (adb) lets anyone on the branch network control the TV and read its
+            // key. Blocked while locked; a technician can use it during maintenance.
+            if (DebugPolicy.block(owner = true, inMaintenance = inMaintenance(activity), debugBuild = BuildConfig.DEBUG)) {
+                dpm.addUserRestriction(admin, UserManager.DISALLOW_DEBUGGING_FEATURES)
+            } else {
+                dpm.clearUserRestriction(admin, UserManager.DISALLOW_DEBUGGING_FEATURES)
+            }
             if (inMaintenance(activity)) {
                 if (pinned(activity)) activity.stopLockTask()
             } else if (!pinned(activity)) {
