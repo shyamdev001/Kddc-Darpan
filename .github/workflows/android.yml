@@ -49,6 +49,11 @@ jobs:
             echo "::warning::DARPAN_KEYSTORE_B64 is not set. This APK uses a throwaway key and cannot update an installed copy."
           fi
 
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          gradle testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
+
       - name: Build debug APK
         env:
           DARPAN_KEYSTORE_PASSWORD: ${{ secrets.DARPAN_KEYSTORE_PASSWORD }}
@@ -61,7 +66,7 @@ jobs:
       - name: Report build errors
         if: failure()
         run: |
-          grep -E '^e: |error: |What went wrong|Could not resolve|> ' build.log | head -40 | while IFS= read -r line; do
+          cat test.log build.log 2>/dev/null | grep -E '^e: |error: |What went wrong|Could not resolve|FAILED|> ' | head -40 | while IFS= read -r line; do
             echo "::error::$line"
           done
 

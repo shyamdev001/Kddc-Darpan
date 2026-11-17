@@ -97,23 +97,3 @@ class MediaCache(filesDir: File, private val http: OkHttpClient, private val pre
         const val RESERVE_BYTES = 200L * 1024 * 1024 // keep some room for the system
     }
 }
-
-/** The last manifest received, so the TV keeps playing after a reboot with no network. */
-class ManifestStore(filesDir: File) {
-    private val file = File(filesDir, "manifest.json")
-
-    fun save(raw: String) {
-        val tmp = File(file.path + ".tmp")
-        tmp.writeText(raw)
-        if (!tmp.renameTo(file)) {
-            file.delete()
-            tmp.renameTo(file)
-        }
-    }
-
-    fun load(): String? = if (file.exists()) file.readText() else null
-
-    fun clear() {
-        file.delete()
-    }
-}

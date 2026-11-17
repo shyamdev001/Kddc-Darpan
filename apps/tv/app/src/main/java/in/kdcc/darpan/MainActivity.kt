@@ -96,7 +96,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
         prefs = Prefs(this)
         api = Api(prefs)
         cache = MediaCache(filesDir, api.http, prefs)
-        store = ManifestStore(filesDir)
+        // A saved copy only counts if it parses; otherwise the previous good one is used.
+        store = ManifestStore(filesDir) { raw -> runCatching { api.parseManifest(raw) }.isSuccess }
         plays = PlayLogStore(filesDir)
         updater = Updater(this, api.http, prefs) { runOnUiThread { link?.sendHeartbeat() } }
         playback = Playback(

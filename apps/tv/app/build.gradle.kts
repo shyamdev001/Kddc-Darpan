@@ -50,6 +50,11 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        // Plain JVM tests (no device): Android calls such as Log return defaults instead of failing.
+        unitTests.isReturnDefaultValues = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -73,4 +78,7 @@ dependencies {
     implementation("io.socket:socket.io-client:2.1.1") {
         exclude(group = "org.json", module = "json")
     }
+
+    // Tests only (run on the build machine; not part of the APK).
+    testImplementation("junit:junit:4.13.2")
 }
