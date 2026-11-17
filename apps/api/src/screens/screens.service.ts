@@ -52,9 +52,12 @@ export class ScreensService {
   // ---------- TV side ----------
 
   /**
-   * First boot of the TV app, or after its data was cleared. A TV that was already paired and
-   * registers again goes back to "needs pairing" (name, branch and playlist are kept), because
-   * its old token was lost with the app data.
+   * First boot of the TV app, or after its data was cleared.
+   *
+   * A hardware id that belongs to a paired screen does NOT take that screen over: anyone who learns
+   * a TV's id could otherwise knock it off air. The caller gets a replacement token that can only
+   * show a pairing code; the paired TV's own token keeps working (and the screen keeps playing)
+   * until head office enters that code on the dashboard, which moves the screen to the new token.
    */
   async register(dto: RegisterDeviceDto, ip?: string): Promise<RegisterDeviceResponse> {
     const existing = await this.prisma.screen.findUnique({
@@ -62,6 +65,30 @@ export class ScreensService {
       select: { id: true, status: true, name: true },
     });
     const { token, hash } = newDeviceToken();
+
+    if (existing && existing.status !== 'PENDING') {
+      const screen = await this.withFreshCode((code, expires) =>
+        this.prisma.screen.update({
+          where: { id: existing.id },
+          data: { replacementTokenHash: hash, pairingCode: code, pairingExpires: expires },
+        }),
+      );
+      await this.audit.log({
+        userId: null,
+        action: 'screen.replacement_request',
+        entityType: 'Screen',
+        entityId: screen.id,
+        details: { name: existing.name, model: dto.model },
+        ipAddress: ip,
+      });
+      return {
+        deviceId: screen.id,
+        deviceToken: token,
+        pairingCode: screen.pairingCode!,
+        pairingExpiresAt: screen.pairingExpires!.toISOString(),
+      };
+    }
+
     const info = {
       model: dto.model,
       osVersion: dto.osVersion,
@@ -70,28 +97,16 @@ export class ScreensService {
       ipAddress: ip ?? null,
       lastSeenAt: new Date(),
     };
-
     const screen = await this.withFreshCode((code, expires) =>
       existing
         ? this.prisma.screen.update({
             where: { id: existing.id },
-            data: { ...info, deviceTokenHash: hash, pairingCode: code, pairingExpires: expires, status: 'PENDING' },
+            data: { ...info, deviceTokenHash: hash, pairingCode: code, pairingExpires: expires },
           })
         : this.prisma.screen.create({
             data: { ...info, hardwareId: dto.hardwareId, deviceTokenHash: hash, pairingCode: code, pairingExpires: expires },
           }),
     );
-
-    if (existing && existing.status !== 'PENDING') {
-      await this.audit.log({
-        userId: null,
-        action: 'screen.reregister',
-        entityType: 'Screen',
-        entityId: screen.id,
-        details: { name: existing.name },
-        ipAddress: ip,
-      });
-    }
     return {
       deviceId: screen.id,
       deviceToken: token,
@@ -100,20 +115,24 @@ export class ScreensService {
     };
   }
 
-  /** Polled by the TV while it shows the code. Issues a fresh code once the old one expires. */
-  async deviceStatus(id: string): Promise<DeviceStatusResponse> {
+  /**
+   * Polled by the TV while it shows the code. Issues a fresh code once the old one expires.
+   * `replacement`: the caller holds a replacement token (see register), so it is not paired yet
+   * even though the screen itself is.
+   */
+  async deviceStatus(id: string, replacement = false): Promise<DeviceStatusResponse> {
     let s = await this.prisma.screen.findUniqueOrThrow({ where: { id } });
-    if (s.status === 'PENDING' && (!s.pairingCode || !s.pairingExpires || s.pairingExpires.getTime() < Date.now())) {
+    const waiting = replacement || s.status === 'PENDING';
+    if (waiting && (!s.pairingCode || !s.pairingExpires || s.pairingExpires.getTime() < Date.now())) {
       s = await this.withFreshCode((code, expires) =>
         this.prisma.screen.update({ where: { id }, data: { pairingCode: code, pairingExpires: expires } }),
       );
     }
-    const paired = s.status !== 'PENDING';
     return {
-      paired,
-      pairingCode: paired ? null : s.pairingCode,
-      pairingExpiresAt: paired ? null : (s.pairingExpires?.toISOString() ?? null),
-      screenName: paired ? s.name : null,
+      paired: !waiting,
+      pairingCode: waiting ? s.pairingCode : null,
+      pairingExpiresAt: waiting ? (s.pairingExpires?.toISOString() ?? null) : null,
+      screenName: waiting ? null : s.name,
     };
   }
 
@@ -240,7 +259,8 @@ export class ScreensService {
 
   async claim(dto: ClaimScreenDto, user: AuthUser, ip?: string): Promise<ScreenDetail> {
     const screen = await this.prisma.screen.findUnique({ where: { pairingCode: dto.pairingCode } });
-    if (!screen || screen.status !== 'PENDING' || !screen.pairingExpires || screen.pairingExpires < new Date()) {
+    const replacing = !!screen && screen.status !== 'PENDING' && screen.replacementTokenHash !== null;
+    if (!screen || (screen.status !== 'PENDING' && !replacing) || !screen.pairingExpires || screen.pairingExpires < new Date()) {
       await this.audit.log({ userId: user.id, action: 'screen.claim_failed', entityType: 'Screen', ipAddress: ip });
       throw new BadRequestException(BAD_CODE);
     }
@@ -258,6 +278,8 @@ export class ScreensService {
           pairingCode: null,
           pairingExpires: null,
           pairedAt: new Date(),
+          // A replacement: the TV that showed this code becomes the screen; the old token stops working.
+          ...(replacing ? { deviceTokenHash: screen.replacementTokenHash!, replacementTokenHash: null } : {}),
         },
       });
       if (dto.playlistId !== undefined) {
@@ -269,12 +291,14 @@ export class ScreensService {
     });
     await this.audit.log({
       userId: user.id,
-      action: screen.name ? 'screen.repair' : 'screen.claim',
+      action: replacing ? 'screen.replace' : screen.name ? 'screen.repair' : 'screen.claim',
       entityType: 'Screen',
       entityId: screen.id,
       details: { name: dto.name, branchId: dto.branchId, playlistId: dto.playlistId ?? null, hardwareId: screen.hardwareId },
       ipAddress: ip,
     });
+    // The old device's live connection used the old token: close it.
+    if (replacing) this.gateway.disconnectScreen(screen.id);
     this.events.screensChanged(screen.id);
     return this.detail(screen.id, user);
   }

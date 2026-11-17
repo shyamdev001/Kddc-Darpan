@@ -76,6 +76,54 @@ describe('registering and pairing a TV', () => {
     assert.equal((await call(t.base, 'GET', '/devices/status', { token: first.body.deviceToken })).status, 401);
     assert.equal((await call(t.base, 'GET', '/devices/status', { token: second.body.deviceToken })).status, 200);
   });
+
+  it('does not let another device take over a paired screen by sending its hardware id', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Takeover target');
+    const row = await t.prisma.screen.findUniqueOrThrow({ where: { id: tv.deviceId } });
+    const copycat = await call(t.base, 'POST', '/devices/register', {
+      body: { hardwareId: row.hardwareId, model: 'Someone else', osVersion: '11', resolution: '1920x1080' },
+    });
+    assert.equal(copycat.status, 201);
+    assert.match(copycat.body.pairingCode, /^\d{6}$/);
+
+    // The real TV is untouched: same token, still paired, still gets its ads.
+    assert.equal((await call(t.base, 'GET', '/devices/manifest', { token: tv.deviceToken })).status, 200);
+    const after = await t.prisma.screen.findUniqueOrThrow({ where: { id: tv.deviceId } });
+    assert.equal(after.status, row.status);
+    assert.equal(after.deviceTokenHash, row.deviceTokenHash);
+    assert.equal(after.model, row.model, 'the copycat cannot rewrite the screen details');
+
+    // The newcomer can only show its code: no manifest, no media.
+    const status = await call(t.base, 'GET', '/devices/status', { token: copycat.body.deviceToken });
+    assert.equal(status.status, 200);
+    assert.equal(status.body.paired, false);
+    assert.equal(status.body.pairingCode, copycat.body.pairingCode);
+    assert.equal((await call(t.base, 'GET', '/devices/manifest', { token: copycat.body.deviceToken })).status, 403);
+    assert.equal(await t.prisma.auditLog.count({ where: { action: 'screen.replacement_request', entityId: tv.deviceId } }), 1);
+  });
+
+  it('moves the screen to the new TV only when head office enters its code', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Replaced TV');
+    const row = await t.prisma.screen.findUniqueOrThrow({ where: { id: tv.deviceId } });
+    const fresh = await call(t.base, 'POST', '/devices/register', {
+      body: { hardwareId: row.hardwareId, model: 'Test TV', osVersion: '11', resolution: '1920x1080' },
+    });
+    const claim = await call(t.base, 'POST', '/screens/claim', {
+      cookie: admin,
+      body: { pairingCode: fresh.body.pairingCode, name: 'Replaced TV', branchId: places.matarBranch.id },
+    });
+    assert.equal(claim.status, 201);
+    assert.equal(claim.body.id, tv.deviceId, 'the same screen, with its name, branch and playlists');
+
+    assert.equal((await call(t.base, 'GET', '/devices/manifest', { token: fresh.body.deviceToken })).status, 200);
+    assert.equal((await call(t.base, 'GET', '/devices/manifest', { token: tv.deviceToken })).status, 401, 'the old token stops working');
+    const status = await call(t.base, 'GET', '/devices/status', { token: fresh.body.deviceToken });
+    assert.equal(status.body.paired, true);
+    assert.equal(await t.prisma.auditLog.count({ where: { action: 'screen.replace', entityId: tv.deviceId } }), 1);
+    const done = await t.prisma.screen.findUniqueOrThrow({ where: { id: tv.deviceId } });
+    assert.equal(done.replacementTokenHash, null);
+    assert.equal(done.pairingCode, null);
+  });
 });
 
 describe('what a TV plays', () => {

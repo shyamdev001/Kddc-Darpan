@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,6 +7,8 @@ import { PrismaService } from '../prisma/prisma.service';
 export interface DeviceScreen {
   id: string;
   status: 'PENDING' | 'ONLINE' | 'OFFLINE';
+  /** A replacement waiting for head office: may only show its pairing code. */
+  replacement?: boolean;
 }
 
 declare module 'express' {
@@ -50,7 +52,20 @@ export class DeviceGuard implements CanActivate {
       where: { deviceTokenHash: hashDeviceToken(token) },
       select: { id: true, status: true, lastSeenAt: true },
     });
-    if (!screen) throw new UnauthorizedException('Unknown device. Register again.');
+    if (!screen) {
+      const waiting = await this.prisma.screen.findUnique({
+        where: { replacementTokenHash: hashDeviceToken(token) },
+        select: { id: true },
+      });
+      if (!waiting) throw new UnauthorizedException('Unknown device. Register again.');
+      // Only the pairing-code poll; every other TV route stays closed to it.
+      if (!(req.originalUrl ?? req.url).split('?')[0].endsWith('/devices/status')) {
+        throw new ForbiddenException('Screen is not paired yet');
+      }
+      // Treated as unpaired: no manifest, no media, no lastSeenAt (the paired TV owns those).
+      req.screen = { id: waiting.id, status: 'PENDING', replacement: true };
+      return true;
+    }
 
     if (!screen.lastSeenAt || Date.now() - screen.lastSeenAt.getTime() > TOUCH_EVERY_MS) {
       await this.prisma.screen.update({ where: { id: screen.id }, data: { lastSeenAt: new Date(), ipAddress: req.ip ?? null } });

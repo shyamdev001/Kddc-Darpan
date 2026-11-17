@@ -120,6 +120,10 @@ model Screen {
   pairingCode     String?   @unique // 6 digits while unpaired
   pairingExpires  DateTime?
   pairedAt        DateTime?
+  // A TV that registers again with this screen's hardware id (app data cleared, or someone copying
+  // the id). Its token works only for the pairing screen until head office enters its code; the
+  // current token keeps working until then, so the screen stays on air.
+  replacementTokenHash String?   @unique
 
   // Device info (updated by register + heartbeat)
   model           String?

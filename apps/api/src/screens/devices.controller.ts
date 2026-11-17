@@ -34,7 +34,7 @@ export class DevicesController {
   @Get('status')
   @UseGuards(DeviceGuard)
   status(@Req() req: Request): Promise<DeviceStatusResponse> {
-    return this.screens.deviceStatus(req.screen!.id);
+    return this.screens.deviceStatus(req.screen!.id, req.screen!.replacement === true);
   }
 
   @Get('manifest')

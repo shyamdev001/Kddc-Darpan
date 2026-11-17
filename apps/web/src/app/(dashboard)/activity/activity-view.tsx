@@ -37,6 +37,8 @@ const ACTION_TEXT: Record<string, string> = {
   "screen.claim_failed": "Wrong pairing code",
   "screen.repair": "Re-paired a screen",
   "screen.reregister": "Screen registered again",
+  "screen.replacement_request": "A TV asked to replace a screen",
+  "screen.replace": "Moved a screen to a new TV",
   "screen.update": "Changed a screen",
   "screen.assign_playlist": "Set a screen's playlist",
   "screen.remove": "Removed a screen",
