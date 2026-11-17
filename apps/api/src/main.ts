@@ -5,8 +5,11 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { configureApp } from './app.setup';
 import { AppModule } from './app.module';
+import { assertProductionConfig } from './config-check';
 
 async function bootstrap() {
+  // On the server: refuse to start with missing or unsafe settings, listing all of them.
+  assertProductionConfig(process.env, (line) => Logger.log(line, 'Config'));
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   configureApp(app);
   app.enableShutdownHooks();

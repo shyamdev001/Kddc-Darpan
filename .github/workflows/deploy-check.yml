@@ -12,6 +12,7 @@ on:
       - ".dockerignore"
       - "package-lock.json"
       - "apps/api/prisma/**"
+      - "apps/api/src/config-check.ts"
       - ".github/workflows/deploy-check.yml"
   pull_request:
     paths:
