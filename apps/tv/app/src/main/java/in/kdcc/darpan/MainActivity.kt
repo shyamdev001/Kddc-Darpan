@@ -599,6 +599,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("broadcastId", broadcasts.currentId ?: JSONObject.NULL)
             .put("broadcastStatus", broadcasts.status ?: JSONObject.NULL)
             .put("safeMode", crashes.inSafeMode())
+            .put("capabilities", JSONObject(heartbeatJson.encodeToString(Capabilities.report(this))))
             .put("crash", crashes.report()?.let { JSONObject(heartbeatJson.encodeToString(it)) } ?: JSONObject.NULL)
             .apply {
                 if (::downloader.isInitialized) {

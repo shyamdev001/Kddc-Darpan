@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { BROADCAST_DEFAULT_MIN, isYoutubeHost, youtubeId, type BroadcastEntry, type BroadcastScreenCount, type BroadcastsResponse, type PlaylistSource } from '@darpan/shared';
+import { BROADCAST_DEFAULT_MIN, isYoutubeHost, youtubeId, youtubeSupport, type BroadcastEntry, type BroadcastReach, type BroadcastScreenCount, type BroadcastsResponse, type PlaylistSource } from '@darpan/shared';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
 import { ContentEvents } from '../events/content-events';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { cleanCapabilities } from '../screens/capabilities';
 import { PlaylistResolver, screenPlaceSelect } from '../screens/playlist-resolver.service';
 import type { StartBroadcastDto } from './broadcast.dto';
 
@@ -139,6 +140,22 @@ export class BroadcastsService {
         c.error++;
         if (entry.problems.length < 5) entry.problems.push({ screen: s.name ?? 'Unnamed screen', status: status.replace(/^error:\s*/, '') });
       } else c.loading++;
+    }
+    return out;
+  }
+
+  async reach(level: PlaylistSource, targetId: string | undefined): Promise<BroadcastReach> {
+    const target = await this.target(level, targetId);
+    const rows = await this.prisma.screen.findMany({
+      where: { ...target.screens, status: { not: 'PENDING' }, name: { not: null } },
+      select: { id: true, name: true, capabilities: true },
+      orderBy: { name: 'asc' },
+    });
+    const out: BroadcastReach = { screens: rows.length, youtubeNo: [], youtubeUnknown: 0 };
+    for (const r of rows) {
+      const yt = youtubeSupport(cleanCapabilities(r.capabilities));
+      if (yt.ok === false) out.youtubeNo.push({ id: r.id, name: r.name ?? 'Unnamed screen', reason: yt.reason ?? '' });
+      else if (yt.ok === null) out.youtubeUnknown++;
     }
     return out;
   }

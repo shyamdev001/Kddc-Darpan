@@ -8,6 +8,7 @@ import {
   isYoutubeHost,
   youtubeId,
   type BroadcastEntry,
+  type BroadcastReach,
   type BroadcastKind,
   type BroadcastsResponse,
   type MediaItem,
@@ -233,6 +234,23 @@ function StartForm({ onStarted }: { onStarted: (d: BroadcastsResponse) => void }
       .catch(() => setMedia([]));
   }, [kind, media]);
 
+  // A YouTube link plays in the TV's WebView, which some models lack or have too old: say so first.
+  const isYoutube = kind === "LINK" && !!youtubeId(url);
+  const reachKey = isYoutube && (target.level === "ALL" || target.targetId) ? `${target.level}:${target.targetId}` : null;
+  const [reach, setReach] = useState<{ key: string; data: BroadcastReach } | null>(null);
+  useEffect(() => {
+    if (!reachKey) return;
+    const params = new URLSearchParams({ level: target.level, ...(target.level === "ALL" ? {} : { targetId: target.targetId }) });
+    let live = true;
+    apiFetch<BroadcastReach>(`/api/broadcasts/reach?${params}`)
+      .then((data) => live && setReach({ key: reachKey, data }))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [reachKey, target.level, target.targetId]);
+  const youtubeReach = reachKey && reach?.key === reachKey ? reach.data : null;
+
   const hint = kind === "LINK" ? linkHint(url) : null;
   const chosen = media?.find((m) => m.id === mediaId) ?? null;
   const ready =
@@ -386,6 +404,7 @@ function StartForm({ onStarted }: { onStarted: (d: BroadcastsResponse) => void }
           </div>
 
           <TargetPicker value={target} onChange={setTarget} idPrefix="b" />
+          {youtubeReach && <YoutubeReachNote reach={youtubeReach} />}
 
           <div className="flex flex-wrap items-end gap-5">
             <div className="grid min-w-44 gap-1.5">
@@ -474,6 +493,40 @@ function Preview({
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Which chosen screens will not play this YouTube link. Nothing when all of them can. */
+function YoutubeReachNote({ reach }: { reach: BroadcastReach }) {
+  const no = reach.youtubeNo;
+  if (!no.length && !reach.youtubeUnknown) return null;
+  return (
+    <div role="status" className="grid gap-1 rounded-md bg-haldi/15 px-3 py-2.5 text-sm text-[#6b4a00]">
+      {no.length > 0 && (
+        <>
+          <p className="font-medium">
+            {no.length === reach.screens
+              ? "None of these screens can play YouTube."
+              : `${no.length} of ${reach.screens} screens cannot play YouTube.`}{" "}
+            They keep showing their ads instead.
+          </p>
+          <ul className="list-disc pl-5">
+            {no.slice(0, 5).map((s) => (
+              <li key={s.id}>
+                {s.name} {s.reason}
+              </li>
+            ))}
+            {no.length > 5 && <li>and {no.length - 5} more</li>}
+          </ul>
+        </>
+      )}
+      {reach.youtubeUnknown > 0 && (
+        <p>
+          {reach.youtubeUnknown} screen{reach.youtubeUnknown === 1 ? " has" : "s have"} not said yet whether they can (older app). Check
+          one with a screenshot after starting.
+        </p>
+      )}
     </div>
   );
 }

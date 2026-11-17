@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { filesProblem, type BranchOption, type Orientation, type PlaylistSummary, type ScreenDetail, type UpdateScreenRequest } from "@darpan/shared";
+import { filesProblem, youtubeSupport, type BranchOption, type Orientation, type PlaylistSummary, type ScreenDetail, type UpdateScreenRequest } from "@darpan/shared";
 import { ChevronLeft, Loader2, Trash2 } from "lucide-react";
 import {
   AlertDialog,
@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useCanEdit } from "@/components/session-context";
 import { apiFetch } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import { formatAgo, formatDay } from "@/lib/format";
 import { useScreenUpdates } from "@/lib/live-updates";
 import { OrientationPicker } from "../orientation-picker";
@@ -300,6 +301,63 @@ function SettingsCard({ screen, onSaved }: { screen: ScreenDetail; onSaved: (s: 
   );
 }
 
+/** What this TV model can and cannot do, in plain words, as the TV found out for itself. */
+function Capabilities({ caps }: { caps: ScreenDetail["capabilities"] }) {
+  if (!caps) {
+    return (
+      <p className="border-t px-4 py-3 text-sm text-muted-foreground sm:px-5">
+        What this TV can do shows here once it runs the latest app.
+      </p>
+    );
+  }
+  const yt = youtubeSupport(caps);
+  const signal = (dbm: number) => (dbm >= -60 ? "strong" : dbm >= -70 ? "fair" : "weak");
+  const rows: [string, string, boolean | null][] = [
+    ["YouTube broadcasts", yt.ok ? "Yes" : yt.ok === false ? `No: ${yt.reason?.replace(/^has /, "")}` : "Not known", yt.ok],
+    ["1080p video", caps.h264_1080p === null ? "Not known" : caps.h264_1080p ? "Yes" : "No: posters only are safe", caps.h264_1080p],
+    ["Kiosk mode and auto-start", caps.deviceOwner ? "Set up" : "Not set up (the app is not device owner)", caps.deviceOwner],
+    [
+      "Brightness from the dashboard",
+      caps.brightness === null ? "Not tried yet" : caps.brightness ? "Works" : "Ignored: set it in the TV's picture settings",
+      caps.brightness,
+    ],
+    [
+      "Screen off outside hours",
+      caps.screenOff === null ? "Not tested" : caps.screenOff ? "Works" : "Not possible: use the TV's own on/off timer",
+      caps.screenOff,
+    ],
+    [
+      "Video in screenshots",
+      caps.videoInScreenshot === null ? "Not known yet" : caps.videoInScreenshot ? "Yes" : "No: video areas show black",
+      caps.videoInScreenshot,
+    ],
+    [
+      "Network",
+      caps.network.type === "ethernet"
+        ? "Wired"
+        : caps.network.type === "wifi"
+          ? `Wi-Fi${caps.network.wifiDbm !== null ? `, ${signal(caps.network.wifiDbm)} signal (${caps.network.wifiDbm} dBm)` : ""}`
+          : caps.network.type === "none"
+            ? "Not connected"
+            : "Other",
+      caps.network.type === "wifi" && caps.network.wifiDbm !== null ? caps.network.wifiDbm >= -70 : null,
+    ],
+  ];
+  return (
+    <div className="border-t px-4 py-4 sm:px-5">
+      <h3 className="mb-2 text-sm font-semibold">What this TV can do</h3>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+        {rows.map(([label, value, good]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className={cn("min-w-0 text-right", good === false && "text-[#6b4a00]")}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 /** The app's last crash, in a fold: the type and when, with the technical lines for whoever fixes it. */
 function CrashNote({ crash, ago }: { crash: NonNullable<ScreenDetail["crash"]>; ago: string }) {
   const name = crash.type.split(".").pop() ?? crash.type;
@@ -389,6 +447,7 @@ function DeviceCard({ screen, ago, now, canEdit }: { screen: ScreenDetail; ago: 
             </div>
           ))}
         </dl>
+        <Capabilities caps={screen.capabilities} />
       </section>
 
       {canEdit && <RemoteCard screen={screen} />}

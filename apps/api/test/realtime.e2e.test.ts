@@ -214,3 +214,57 @@ describe('crashes reach head office', () => {
     assert.equal((await detail()).crash.type, 'java.lang.OutOfMemoryError');
   });
 });
+
+describe('what each TV can do', () => {
+  const caps = (major: number | null, extra: Record<string, unknown> = {}) => ({
+    sdk: 28,
+    webView: major === null ? null : { package: 'com.google.android.webview', version: `${major}.0.4472.114`, major },
+    h264_1080p: true,
+    hevc: false,
+    deviceOwner: true,
+    brightness: false,
+    network: { type: 'wifi', wifiDbm: -61 },
+    screenOff: null,
+    videoInScreenshot: null,
+    ...extra,
+  });
+
+  it('is stored and shown on the screen page; unknown fields are dropped', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Capable TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    const detail = async () => (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body.capabilities;
+
+    assert.equal(await detail(), null);
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, capabilities: caps(91, { secret: 'x', network: { type: 'wifi', wifiDbm: -61, ssid: 'BankWiFi' } }) });
+    const c = await detail();
+    assert.equal(c.webView.major, 91);
+    assert.equal(c.brightness, false);
+    assert.deepEqual(c.network, { type: 'wifi', wifiDbm: -61 });
+    assert.equal(c.secret, undefined);
+    // A heartbeat without capabilities (older app) keeps what we know.
+    await device.timeout(3_000).emitWithAck('heartbeat', base);
+    assert.equal((await detail()).webView.major, 91);
+  });
+
+  it('the broadcast form learns which chosen screens cannot play YouTube, and why', async () => {
+    const region = places.south.id;
+    const old = await pairedTv(t.base, admin, places.matarBranch.id, 'Old WebView TV');
+    const none = await pairedTv(t.base, admin, places.matarBranch.id, 'Silent TV');
+    const oldSock = tvSocket(old.deviceToken);
+    await connected(oldSock);
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    await oldSock.timeout(3_000).emitWithAck('heartbeat', { ...base, capabilities: caps(66) });
+
+    const res = await call(t.base, 'GET', `/broadcasts/reach?level=REGION&targetId=${region}`, { cookie: admin });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const no = res.body.youtubeNo.find((s: { id: string }) => s.id === old.deviceId);
+    assert.ok(no, JSON.stringify(res.body));
+    assert.match(no.reason, /WebView 66, YouTube needs 80/);
+    assert.ok(!res.body.youtubeNo.some((s: { id: string }) => s.id === none.deviceId), 'not reported is "unknown", not "no"');
+    assert.ok(res.body.youtubeUnknown >= 1);
+    assert.ok(res.body.screens >= 2);
+    assert.equal((await call(t.base, 'GET', '/broadcasts/reach?level=REGION', { cookie: admin })).status, 400);
+  });
+});

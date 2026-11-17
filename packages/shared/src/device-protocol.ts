@@ -118,6 +118,44 @@ export interface HeartbeatPayload {
   crash?: CrashReportPayload | null;
   /** Many crashes lately: playing posters only (no video, no live links) for a while. */
   safeMode?: boolean;
+  /** What this TV model can do, detected on the TV at each start. */
+  capabilities?: TvCapabilities;
+}
+
+/**
+ * The oldest WebView (Chromium) major version YouTube's embedded player is expected to work on.
+ * Conservative: older ones often load the page but never start the video.
+ */
+export const YOUTUBE_MIN_WEBVIEW = 80;
+
+/** What a TV can and cannot do. Behaviour differs per model, so the TV checks itself. null = not known yet. */
+export interface TvCapabilities {
+  /** Android API level, e.g. 28 = Android 9. */
+  sdk: number;
+  /** The system WebView: YouTube broadcasts play in it. null = none installed. */
+  webView: { package: string; version: string; major: number | null } | null;
+  /** Has a hardware decoder for the 1080p H.264 videos the server makes. */
+  h264_1080p: boolean | null;
+  /** Has an HEVC (H.265) decoder (for the record; the server always makes H.264). */
+  hevc: boolean | null;
+  /** The app is device owner: kiosk mode, system brightness, auto-start and screen-off work. */
+  deviceOwner: boolean;
+  /** System brightness read back after the dashboard set it: true = honoured, false = ignored. */
+  brightness: boolean | null;
+  network: { type: 'ethernet' | 'wifi' | 'other' | 'none'; wifiDbm: number | null };
+  /** Outside display hours the app could switch the panel off (and back on). */
+  screenOff: boolean | null;
+  /** Screenshots show video; false = the video area comes out black on this model. */
+  videoInScreenshot: boolean | null;
+}
+
+/** Whether a YouTube broadcast should play on this TV, and why not. */
+export function youtubeSupport(c: TvCapabilities | null): { ok: boolean | null; reason: string | null } {
+  if (!c) return { ok: null, reason: 'has not reported what it can do yet (app too old or never connected)' };
+  if (!c.webView) return { ok: false, reason: 'has no WebView, which YouTube needs' };
+  if (c.webView.major === null) return { ok: null, reason: `has WebView ${c.webView.version}, version unknown` };
+  if (c.webView.major < YOUTUBE_MIN_WEBVIEW) return { ok: false, reason: `has WebView ${c.webView.major}, YouTube needs ${YOUTUBE_MIN_WEBVIEW} or newer` };
+  return { ok: true, reason: null };
 }
 
 export interface CrashReportPayload {

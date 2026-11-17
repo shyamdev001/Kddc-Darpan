@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { cleanCapabilities } from './capabilities';
 import { crashReport } from './crash-report';
 import {
   KIOSK_STATES,
@@ -263,6 +264,7 @@ export class ScreensService {
       files: screenFiles(s),
       crash: screenCrash(s.lastCrash),
       safeMode: s.safeMode,
+      capabilities: cleanCapabilities(s.capabilities),
       pairedAt: s.pairedAt?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
       ownPlaylistId: s.assignments[0]?.playlistId ?? null,

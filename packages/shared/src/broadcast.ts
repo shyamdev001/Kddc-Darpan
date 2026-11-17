@@ -73,6 +73,15 @@ export interface BroadcastEntry {
   problems: { screen: string; status: string }[];
 }
 
+/** Before starting a broadcast: which of the chosen screens can play a YouTube link. */
+export interface BroadcastReach {
+  screens: number;
+  /** Screens whose WebView is missing or too old, with the reason. */
+  youtubeNo: { id: string; name: string; reason: string }[];
+  /** Screens that have not said (older app, or never connected since the update). */
+  youtubeUnknown: number;
+}
+
 export interface BroadcastsResponse {
   active: BroadcastEntry[];
   recent: BroadcastEntry[];

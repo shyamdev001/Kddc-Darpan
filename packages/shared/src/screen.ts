@@ -1,4 +1,5 @@
 import type { DisplayHoursValue, TimeSlot } from './schedule';
+import type { TvCapabilities } from './device-protocol';
 // Dashboard view of screens (TVs). Device-side shapes live in device-protocol.ts.
 import type { Orientation } from './enums';
 
@@ -119,6 +120,8 @@ export interface ScreenDetail extends ScreenSummary {
   crash: { at: string; type: string; message: string | null; frames: string[]; total: number; recent: number } | null;
   /** Many crashes lately: playing posters only (no video, no live links) for up to an hour. */
   safeMode: boolean;
+  /** What the TV says it can do; null for app versions that do not report it. */
+  capabilities: TvCapabilities | null;
   pairedAt: string | null;
   createdAt: string;
   /** playlist set directly on this screen (null = inherits from branch/taluka/region/all) */

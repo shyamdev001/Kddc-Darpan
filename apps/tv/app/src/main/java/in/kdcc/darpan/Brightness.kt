@@ -53,6 +53,9 @@ object Brightness {
                 val level = (p * 255 + 50) / 100
                 dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL.toString())
                 dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS, level.toString())
+                // Read it back: some TVs accept the setting but drive the backlight from their own menu.
+                val now = Settings.System.getInt(resolver, Settings.System.SCREEN_BRIGHTNESS, -1)
+                Capabilities.learn(context, Capabilities.KEY_BRIGHTNESS, kotlin.math.abs(now - level) <= 2)
             } else if (prefs.contains(KEY_ORIGINAL)) {
                 dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS, prefs.getInt(KEY_ORIGINAL, 128).toString())
                 dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS_MODE, prefs.getInt(KEY_ORIGINAL_MODE, 0).toString())

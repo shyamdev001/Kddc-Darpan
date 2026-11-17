@@ -3,6 +3,16 @@ import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, M
 
 const LEVELS: PlaylistSource[] = ['ALL', 'REGION', 'TALUKA', 'BRANCH', 'SCREEN'];
 
+/** Where a broadcast would go, to check the screens first. */
+export class BroadcastReachQuery {
+  @IsIn(LEVELS)
+  level!: PlaylistSource;
+
+  @ValidateIf((o: BroadcastReachQuery) => o.level !== 'ALL')
+  @IsUUID('all', { message: 'Choose where to show it' })
+  targetId?: string;
+}
+
 export class StartBroadcastDto {
   @IsIn(BROADCAST_KINDS)
   kind!: BroadcastKind;
