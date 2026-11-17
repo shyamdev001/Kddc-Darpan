@@ -56,6 +56,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var updater: Updater
     private lateinit var playback: Playback
     private lateinit var broadcasts: BroadcastPlayer
+    private lateinit var downloader: Downloader
 
     private lateinit var root: FrameLayout
     private lateinit var stage: FrameLayout
@@ -120,6 +121,16 @@ class MainActivity : Activity(), DeviceLink.Listener {
             scope,
             onEnded = { playback.hold(false) },
             onStatus = { link?.sendHeartbeat() },
+        )
+
+        downloader = Downloader(
+            scope,
+            Dispatchers.IO,
+            has = { cache.has(it) },
+            fetch = { cache.download(it) },
+            cleanup = { cache.cleanup(it) },
+            onDone = { runOnUiThread { link?.sendHeartbeat() } },
+            onAuthLost = { runOnUiThread { onUnauthorized() } },
         )
 
         findViewById<Button>(R.id.changeServer).setOnClickListener { showSetup(null) }
@@ -352,14 +363,22 @@ class MainActivity : Activity(), DeviceLink.Listener {
         playUploads = null
     }
 
-    /** Fetch the manifest, start showing it, then download anything missing. True if the fetch worked. */
+    /**
+     * Fetch the manifest and put it on screen; missing files download in the background.
+     * The lock covers only the quick part, so a broadcast pushed meanwhile is never kept waiting
+     * behind a long download. True if the fetch worked.
+     */
     private suspend fun sync(): Boolean = syncLock.withLock {
         try {
             val raw = api.manifestRaw()
             val m = api.parseManifest(raw)
-            withContext(Dispatchers.IO) { store.save(raw) }
+            try {
+                withContext(Dispatchers.IO) { store.save(raw) }
+            } catch (e: IOException) {
+                Log.w(TAG, "Could not save the manifest; showing it anyway", e) // e.g. disk full
+            }
             applyManifest(m)
-            withContext(Dispatchers.IO) { downloadAll(m) }
+            downloader.want(m)
             link?.sendHeartbeat()
             scope.launch { updater.consider(m.app) } // may wait minutes; must not hold the sync lock
             return@withLock true
@@ -378,29 +397,6 @@ class MainActivity : Activity(), DeviceLink.Listener {
             Log.w(TAG, "Sync failed; still playing the last content", e)
         }
         false
-    }
-
-    private suspend fun downloadAll(m: Manifest) {
-        // A broadcast's poster or video first: it is what the screen is waiting to show.
-        val files = listOfNotNull(m.broadcast?.media) + m.items
-        for (item in files.distinctBy { it.sha256 }) {
-            if (cache.has(item)) continue
-            for (attempt in 1..3) {
-                val done = try {
-                    cache.download(item)
-                } catch (e: ApiException) {
-                    if (e.code == 401) throw e
-                    Log.w(TAG, "Download ${item.mediaId} failed: ${e.code}")
-                    false
-                } catch (e: IOException) {
-                    Log.w(TAG, "Download ${item.mediaId} interrupted; will resume", e)
-                    false
-                }
-                if (done) break
-                delay(3_000L * attempt)
-            }
-        }
-        cache.cleanup(files.map { it.sha256 }.toSet())
     }
 
     private fun applyManifest(m: Manifest) {
