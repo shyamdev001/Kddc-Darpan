@@ -45,3 +45,4 @@ CLAUDE.local.md
 
 # Production backups on the server (deploy/backups)
 deploy/backups/
+soak-*.csv

@@ -107,6 +107,17 @@ WebView and internet at the branch). Direct .m3u8 / .mp4 links play in ExoPlayer
 sound unless "Sound off" is ticked. The dashboard shows how many screens are showing it, and why a
 screen could not (for example a YouTube video whose owner does not allow embedding).
 
+## Soak test
+Before each pilot release, run the 72-hour soak test on the head-office TV: [SOAK_TEST.md](SOAK_TEST.md).
+`tools/soak.sh` records the app's memory every hour and prints a pass/fail verdict.
+
+## Keeping screens in step
+A branch with **Keep screens in step** on (dashboard, Branches, edit the branch) plays one shared
+timeline on all its TVs: the item and the moment inside it are worked out from the server's time, so
+TVs side by side change together. Each TV measures the server's clock in short bursts (at connect and
+every 5 minutes) and holds videos to the timeline. The screen page shows how close each TV keeps.
+A file a TV has not downloaded yet keeps its turn, filled by the default slide.
+
 ## Not yet
 Nothing planned for Phase 2.
 Portrait TVs are rotated 90° clockwise; a flip option may be needed.
