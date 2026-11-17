@@ -66,6 +66,15 @@ jobs:
           curl -fsSk -D headers.txt -o /dev/null https://localhost/login
           grep -qi '^strict-transport-security:' headers.txt
           ! grep -qi '^server:' headers.txt
+          ! grep -qi '^x-powered-by:' headers.txt
+          # No other site may frame the dashboard (click-jacking), on any page, signed in or not.
+          for page in /login / /broadcast; do
+            curl -sSk -D h.txt -o /dev/null "https://localhost$page"
+            grep -i "^content-security-policy:.*frame-ancestors 'none'" h.txt || { echo "::error::$page lacks frame-ancestors"; cat h.txt; exit 1; }
+            grep -qi '^x-frame-options: *deny' h.txt
+            grep -qi '^x-content-type-options: *nosniff' h.txt
+            grep -qi '^referrer-policy:' h.txt
+          done
 
       - name: Video tools present in the API image
         run: docker compose exec -T api sh -c 'ffmpeg -version | head -1 && ffprobe -version | head -1'
