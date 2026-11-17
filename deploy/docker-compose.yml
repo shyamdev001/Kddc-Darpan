@@ -67,6 +67,32 @@ services:
         condition: service_healthy
     <<: *logs
 
+  # Nightly database backup plus a copy of the media, kept in deploy/backups on the server.
+  # Copy that folder off the server too (see README: "Backups").
+  backup:
+    image: postgres:18
+    restart: unless-stopped
+    entrypoint: ["sh", "/scripts/schedule.sh"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_AT_UTC: ${BACKUP_AT_UTC:-20:30}
+    volumes:
+      - ./backup:/scripts:ro
+      - media:/media:ro
+      - ./backups:/backups
+    healthcheck:
+      # Unhealthy when the last good backup is more than 26 hours old.
+      test: ["CMD-SHELL", "test -n \"$$(find /backups/last-success -mmin -1560 2>/dev/null)\""]
+      interval: 5m
+      timeout: 10s
+      start_period: 10m
+      start_interval: 15s
+    depends_on:
+      db:
+        condition: service_healthy
+    <<: *logs
+
   caddy:
     image: caddy:2
     restart: unless-stopped

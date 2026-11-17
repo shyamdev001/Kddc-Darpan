@@ -80,6 +80,22 @@ jobs:
           curl -fsSk -o /dev/null -H "authorization: Bearer $token" https://localhost/api/devices/status
           echo "$token" > ../tv-token.txt
 
+      - name: Backup runs, and a restore drill gets the same data back
+        run: |
+          docker compose exec -T api sh -c 'echo probe > /data/media/ci-probe.txt'
+          docker compose exec -T backup sh /scripts/backup.sh
+          ls -l backups/db/darpan-*.dump
+          test -f backups/media/ci-probe.txt
+          test -f backups/last-success
+          out=$(docker compose exec -T backup sh /scripts/restore.sh)
+          echo "$out"
+          live=$(docker compose exec -T db psql -U darpan -d darpan_prod -tAc 'SELECT count(*) FROM "Screen"')
+          echo "$out" | grep -q "Screens in darpan_restore_test: $live\$"
+          [ "$live" -ge 1 ]
+          # The live database cannot be overwritten by accident.
+          ! docker compose exec -T backup sh /scripts/restore.sh "" darpan_prod
+          [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q backup)")" = healthy ]
+
       - name: Live connections pass through Caddy (TVs and dashboard)
         run: |
           curl -fsSk 'https://localhost/socket.io/?EIO=4&transport=polling' | grep -q '"sid"'

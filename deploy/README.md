@@ -40,3 +40,41 @@ the API restarts.
 
 Docker volumes `darpan_pgdata` (database), `darpan_media` (uploaded posters and videos) and
 `darpan_caddy_data` (certificates).
+
+## Backups
+
+The `backup` service backs up every night at 02:00 India time (`BACKUP_AT_UTC`, default `20:30`):
+
+- `deploy/backups/db/darpan-<date>.dump`: the whole database. The last 14 days are kept (`BACKUP_KEEP_DAYS`).
+- `deploy/backups/media/`: a copy of every poster and video. Files are added, never removed.
+- `deploy/backups/last-success`: when the last good backup finished. `docker compose ps` shows the
+  `backup` service as **unhealthy** if that is more than 26 hours ago.
+
+Backup now: `docker compose exec backup sh /scripts/backup.sh`
+
+**These copies are on the same server.** If the server is lost, they are lost too. Also do one of these:
+
+- Turn on Lightsail **automatic snapshots** for the instance (daily, kept 7 days, small monthly charge), or
+- copy `deploy/backups` to another machine regularly, for example from a head-office PC:
+  `scp -r ubuntu@<server>:darpan/deploy/backups D:\darpan-backups`
+
+### Test a backup (do this once a month)
+
+```bash
+docker compose exec backup sh /scripts/restore.sh
+```
+
+This restores the newest backup into a separate database, `darpan_restore_test`, and prints how many
+screens it holds. The live system is not touched. A different backup:
+`docker compose exec backup sh /scripts/restore.sh darpan-20260101-203000.dump`
+
+### Recover after a disaster
+
+On a new server, follow "First install" up to step 5, then:
+
+1. Copy the saved `backups` folder into `deploy/backups`.
+2. `docker compose up -d db backup` (only the database and the backup service).
+3. `docker compose exec -e I_STOPPED_THE_API=yes backup sh /scripts/restore.sh darpan-<date>.dump darpan_prod`
+4. Put the media back:
+   `docker compose run --rm --no-deps -v ./backups/media:/restore:ro --entrypoint sh api -c 'cp -a /restore/. /data/media/'`
+5. `docker compose up -d` and sign in. TVs reconnect on their own; they kept playing meanwhile.

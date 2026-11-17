@@ -42,3 +42,6 @@ apps/api/src/generated/
 # Internal bank documents and private context (repo is public)
 /docs/
 CLAUDE.local.md
+
+# Production backups on the server (deploy/backups)
+deploy/backups/
