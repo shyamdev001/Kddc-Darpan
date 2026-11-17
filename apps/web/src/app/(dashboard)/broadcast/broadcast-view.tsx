@@ -11,7 +11,6 @@ import {
   type BroadcastKind,
   type BroadcastsResponse,
   type MediaItem,
-  type MediaListResponse,
   type StartBroadcastRequest,
 } from "@darpan/shared";
 import { Film, ImageIcon, Link2, Loader2, MessageSquareText, Radio, Square, VolumeX } from "lucide-react";
@@ -21,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { apiFetch } from "@/lib/api-client";
+import { fetchMediaPages } from "@/lib/media-pages";
 import { cn } from "@/lib/utils";
 import { TargetPicker, type Target } from "../schedules/controls";
 import { whereText } from "../schedules/format";
@@ -228,7 +228,7 @@ function StartForm({ onStarted }: { onStarted: (d: BroadcastsResponse) => void }
 
   useEffect(() => {
     if (kind !== "MEDIA" || media) return;
-    apiFetch<MediaListResponse>("/api/media")
+    fetchMediaPages()
       .then((r) => setMedia(r.items.filter((m) => m.status === "READY")))
       .catch(() => setMedia([]));
   }, [kind, media]);

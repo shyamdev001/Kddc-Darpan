@@ -1,12 +1,16 @@
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { MEDIA_PAGE_MAX } from '@darpan/shared';
 import {
   ArrayMaxSize,
   IsArray,
   IsIn,
+  IsInt,
   IsISO8601,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
@@ -24,6 +28,19 @@ export class ListMediaQuery {
   @IsOptional()
   @IsIn(['UPLOADED', 'PROCESSING', 'READY', 'FAILED'])
   status?: 'UPLOADED' | 'PROCESSING' | 'READY' | 'FAILED';
+
+  /** From the previous page's nextCursor. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  cursor?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MEDIA_PAGE_MAX)
+  limit?: number;
 }
 
 export class UpdateMediaDto {

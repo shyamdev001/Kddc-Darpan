@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { MediaItem, MediaListResponse } from "@darpan/shared";
+import type { MediaItem } from "@darpan/shared";
 import { Film, Plus, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { apiFetch } from "@/lib/api-client";
+import { fetchMediaPages } from "@/lib/media-pages";
 import { formatDuration, scheduleOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +16,7 @@ export function MediaPicker({ usage, onAdd }: { usage: Map<string, number>; onAd
   const [type, setType] = useState<"all" | "IMAGE" | "VIDEO">("all");
 
   useEffect(() => {
-    apiFetch<MediaListResponse>("/api/media")
+    fetchMediaPages()
       .then((r) => setMedia(r.items.filter((m) => m.status !== "FAILED")))
       .catch(() => setMedia([]));
   }, []);

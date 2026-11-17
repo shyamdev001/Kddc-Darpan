@@ -70,3 +70,57 @@ describe('uploading media', () => {
     assert.equal((await upload('x.jpg', await poster('#ffffff'), 'image/jpeg', viewer)).status, 403);
   });
 });
+
+describe('media list paging', () => {
+  it('520 items come back in pages, all of them, none twice, newest first', async () => {
+    await t.prisma.media.deleteMany();
+    // Many share one upload time (a bulk upload), so the order must not rely on the time alone.
+    const sameTime = new Date('2026-11-01T10:00:00.000Z');
+    await t.prisma.media.createMany({
+      data: Array.from({ length: 520 }, (_, i) => ({
+        originalName: `poster-${i}.jpg`,
+        displayName: `Poster ${i}`,
+        type: 'IMAGE' as const,
+        status: 'READY' as const,
+        originalKey: `originals/paging-${i}.jpg`,
+        originalSha256: `sha-paging-${i}`,
+        originalSizeBytes: 1000n,
+        originalMimeType: 'image/jpeg',
+        createdAt: i < 300 ? sameTime : new Date(sameTime.getTime() + i * 1000),
+      })),
+    });
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const qs: string = cursor ? `?limit=200&cursor=${cursor}` : '?limit=200';
+      const res = await fetch(`${t.base}/media${qs}`, { headers: { cookie: admin } });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { items: { id: string; createdAt: string }[]; counts: { all: number }; nextCursor: string | null };
+      assert.equal(body.counts.all, pages === 0 ? 520 : 521, 'the count is of the whole library');
+      seen.push(...body.items.map((m) => m.id));
+      // Something added mid-way must not shift the pages.
+      if (pages === 0) {
+        await t.prisma.media.create({
+          data: { originalName: 'new.jpg', displayName: 'New', type: 'IMAGE', status: 'READY', originalKey: 'originals/paging-new.jpg', originalSha256: 'sha-paging-new', originalSizeBytes: 1n, originalMimeType: 'image/jpeg' },
+        });
+      }
+      cursor = body.nextCursor;
+      pages++;
+    } while (cursor && pages < 10);
+
+    assert.equal(pages, 3);
+    assert.equal(seen.length, 520);
+    assert.equal(new Set(seen).size, 520, 'no item twice');
+
+    const first = await fetch(`${t.base}/media`, { headers: { cookie: admin } }).then((r) => r.json() as Promise<{ items: { displayName: string }[] }>);
+    assert.equal(first.items.length, 200, 'default page size');
+    assert.equal(first.items[0].displayName, 'New', 'newest first');
+
+    const bad = await fetch(`${t.base}/media?cursor=not-a-cursor`, { headers: { cookie: admin } });
+    assert.equal(bad.status, 400);
+    assert.equal((await fetch(`${t.base}/media?limit=501`, { headers: { cookie: admin } })).status, 400);
+    await t.prisma.media.deleteMany();
+  });
+});

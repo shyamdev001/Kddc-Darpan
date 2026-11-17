@@ -36,7 +36,13 @@ export interface MediaItem {
 export interface MediaListResponse {
   items: MediaItem[];
   counts: { all: number; images: number; videos: number; processing: number; failed: number };
+  /** Pass as `cursor` to get the next page; null on the last page. */
+  nextCursor: string | null;
 }
+
+/** Media list page size: default and largest allowed. */
+export const MEDIA_PAGE_SIZE = 200;
+export const MEDIA_PAGE_MAX = 500;
 
 export interface UploadResult {
   created: MediaItem[];

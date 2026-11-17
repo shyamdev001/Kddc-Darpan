@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { MediaItem, MediaListResponse, UploadResult } from '@darpan/shared';
+import { MEDIA_PAGE_SIZE, type MediaItem, type MediaListResponse, type UploadResult } from '@darpan/shared';
 import { randomUUID } from 'crypto';
 import { rm } from 'fs/promises';
 import { extname } from 'path';
@@ -77,8 +77,16 @@ export class MediaService {
       ];
     }
 
+    // Newest first, in pages. The cursor is the last item's (createdAt, id), so items added or
+    // deleted meanwhile never make a page repeat or skip one.
+    const limit = query.limit ?? MEDIA_PAGE_SIZE;
+    const after = decodeMediaCursor(query.cursor);
+    const page: Prisma.MediaWhereInput = after
+      ? { AND: [where, { OR: [{ createdAt: { lt: after.createdAt } }, { createdAt: after.createdAt, id: { lt: after.id } }] }] }
+      : where;
+
     const [rows, grouped] = await Promise.all([
-      this.prisma.media.findMany({ where, include: mediaInclude, orderBy: { createdAt: 'desc' }, take: 500 }),
+      this.prisma.media.findMany({ where: page, include: mediaInclude, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: limit + 1 }),
       this.prisma.media.groupBy({ by: ['type', 'status'], _count: { _all: true }, orderBy: { type: 'asc' } }),
     ]);
 
@@ -91,7 +99,10 @@ export class MediaService {
       if (g.status === 'UPLOADED' || g.status === 'PROCESSING') counts.processing += n;
       if (g.status === 'FAILED') counts.failed += n;
     }
-    return { items: rows.map((r) => this.toItem(r)), counts };
+    const more = rows.length > limit;
+    const items = more ? rows.slice(0, limit) : rows;
+    const last = items[items.length - 1];
+    return { items: items.map((r) => this.toItem(r)), counts, nextCursor: more && last ? encodeMediaCursor(last) : null };
   }
 
   async get(id: string): Promise<MediaRow> {
@@ -239,4 +250,16 @@ export class MediaService {
     if (!path) throw new NotFoundException('File is in remote storage');
     return { path, mime: which === 'file' ? (media.mimeType ?? 'application/octet-stream') : 'image/webp' };
   }
+}
+
+function encodeMediaCursor(m: { createdAt: Date; id: string }): string {
+  return Buffer.from(`${m.createdAt.toISOString()}|${m.id}`).toString('base64url');
+}
+
+function decodeMediaCursor(cursor: string | undefined): { createdAt: Date; id: string } | null {
+  if (!cursor) return null;
+  const [at, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|');
+  const createdAt = new Date(at ?? '');
+  if (!id || !/^[0-9a-f-]{36}$/i.test(id) || Number.isNaN(createdAt.getTime())) throw new BadRequestException('Invalid page cursor');
+  return { createdAt, id };
 }

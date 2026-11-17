@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { goToSignInExpired } from "@/lib/session-expired";
-import type { MediaItem, MediaListResponse } from "@darpan/shared";
-import { Images, Search } from "lucide-react";
+import { MEDIA_PAGE_SIZE, type MediaItem, type MediaListResponse } from "@darpan/shared";
+import { fetchMediaPages } from "@/lib/media-pages";
+import { Images, Loader2, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { MediaDialog } from "./media-dialog";
@@ -20,9 +21,16 @@ export function MediaLibrary() {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  // How many items to show: one page, plus one more for each "Show more". Back to one page when
+  // the search or filter changes.
+  const [want, setWant] = useState(MEDIA_PAGE_SIZE);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(query.trim()), 250);
+    const t = setTimeout(() => {
+      setDebounced(query.trim());
+      setWant(MEDIA_PAGE_SIZE);
+    }, 250);
     return () => clearTimeout(t);
   }, [query]);
 
@@ -32,18 +40,13 @@ export function MediaLibrary() {
     if (filter === "IMAGE" || filter === "VIDEO") params.set("type", filter);
     if (filter === "FAILED") params.set("status", "FAILED");
     try {
-      const res = await fetch(`/api/media?${params}`);
-      if (res.status === 401) {
-        goToSignInExpired();
-        return;
-      }
-      if (!res.ok) throw new Error(`error ${res.status}`);
-      setData(await res.json());
+      setData(await fetchMediaPages(params, want));
       setLoadError(null);
     } catch {
       setLoadError("Could not load the media library. Check that the API is running.");
     }
-  }, [debounced, filter]);
+    setLoadingMore(false);
+  }, [debounced, filter, want]);
 
   // Fetch when the search or filter changes. State is only set after the request resolves.
   useEffect(() => {
@@ -85,7 +88,10 @@ export function MediaLibrary() {
                 key={f.id}
                 role="tab"
                 aria-selected={filter === f.id}
-                onClick={() => setFilter(f.id)}
+                onClick={() => {
+                  setFilter(f.id);
+                  setWant(MEDIA_PAGE_SIZE);
+                }}
                 className={cn(
                   "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
                   filter === f.id ? "bg-card font-medium shadow-sm" : "text-muted-foreground hover:text-foreground",
@@ -127,11 +133,30 @@ export function MediaLibrary() {
           ))}
         </ul>
       ) : data && data.items.length > 0 ? (
-        <ul className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 xl:grid-cols-4">
-          {data.items.map((item) => (
-            <MediaTile key={item.id} item={item} onOpen={() => setOpenId(item.id)} />
-          ))}
-        </ul>
+        <>
+          <ul className="grid grid-cols-2 gap-x-5 gap-y-7 sm:grid-cols-3 xl:grid-cols-4">
+            {data.items.map((item) => (
+              <MediaTile key={item.id} item={item} onOpen={() => setOpenId(item.id)} />
+            ))}
+          </ul>
+          {data.nextCursor && (
+            <div className="flex flex-col items-center gap-2 pt-2 text-sm text-muted-foreground">
+              <p>Showing the newest {data.items.length}. Older items are further on.</p>
+              <Button
+                variant="outline"
+                className="h-10 px-4"
+                disabled={loadingMore}
+                onClick={() => {
+                  setLoadingMore(true);
+                  setWant(data.items.length + MEDIA_PAGE_SIZE);
+                }}
+              >
+                {loadingMore && <Loader2 className="animate-spin" data-icon="inline-start" />}
+                Show more
+              </Button>
+            </div>
+          )}
+        </>
       ) : data && !isEmptyLibrary ? (
         <div className="flex flex-col items-center gap-2 py-16 text-center">
           <Images className="size-6 text-muted-foreground" />
