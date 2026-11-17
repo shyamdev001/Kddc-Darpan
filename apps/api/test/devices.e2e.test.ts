@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PlaylistResolver, screenPlaceSelect } from '../src/screens/playlist-resolver.service';
 import { ManifestService } from '../src/screens/manifest.service';
+import { ScreensService } from '../src/screens/screens.service';
 import { assign, call, createMedia, createPlaces, createPlaylist, createUser, login, pairedTv, registerTv, resetDb, startApp, type TestApp, type TestTv } from './helpers';
 
 let t: TestApp;
@@ -382,5 +383,26 @@ describe('broadcasts', () => {
     const processing = await createMedia(t.prisma, 'Not yet', { status: 'PROCESSING' });
     assert.equal((await start({ kind: 'MEDIA', level: 'ALL', mediaId: processing.id })).status, 400);
     assert.equal((await active()).length, 0);
+  });
+});
+
+describe('abandoned registrations', () => {
+  it('a TV registered but never paired, silent for 7 days, is removed; others stay', async () => {
+    const svc = t.app.get(ScreensService);
+    const old = new Date(Date.now() - 8 * 86_400_000);
+    const abandoned = await registerTv(t.base);
+    const waiting = await registerTv(t.base); // still on screen, asking for its code
+    await t.prisma.$executeRaw`UPDATE "Screen" SET "updatedAt" = ${old} WHERE id = ${abandoned.deviceId}::uuid`;
+    // A paired screen that has been off for weeks must never go.
+    const admin = await login(t.base, await createUser(t.prisma, 'HO_ADMIN'));
+    const paired = await pairedTv(t.base, admin, places.matarBranch.id, 'Off for weeks');
+    await t.prisma.$executeRaw`UPDATE "Screen" SET "updatedAt" = ${old}, status = 'OFFLINE' WHERE id = ${paired.deviceId}::uuid`;
+
+    assert.equal(await svc.prunePending(), 1);
+    assert.equal(await t.prisma.screen.count({ where: { id: abandoned.deviceId } }), 0);
+    assert.equal(await t.prisma.screen.count({ where: { id: waiting.deviceId } }), 1);
+    assert.equal(await t.prisma.screen.count({ where: { id: paired.deviceId } }), 1);
+    // The removed TV just registers again if it ever comes back.
+    assert.equal((await call(t.base, 'GET', '/devices/status', { token: abandoned.deviceToken })).status, 401);
   });
 });

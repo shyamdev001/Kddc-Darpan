@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { cleanCapabilities } from './capabilities';
 import { crashReport } from './crash-report';
 import {
@@ -41,8 +41,38 @@ function isUniqueViolation(err: unknown, field: string): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002' && JSON.stringify(err.meta ?? {}).includes(field);
 }
 
+/** A TV that registered but was never paired, and has not asked for its code for this long, is gone. */
+export const PENDING_KEEP_DAYS = 7;
+const PRUNE_EVERY_MS = 24 * 3_600_000;
+
 @Injectable()
-export class ScreensService {
+export class ScreensService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(ScreensService.name);
+  private timer?: NodeJS.Timeout;
+
+  onModuleInit() {
+    this.timer = setInterval(() => void this.prunePending().catch((e) => this.logger.warn(`Pending cleanup failed: ${(e as Error).message}`)), PRUNE_EVERY_MS);
+    this.timer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  /**
+   * Removes registrations nobody paired: never named, and silent for a week. A TV still showing
+   * its code asks for a fresh one now and then (which touches the row), so it is never removed;
+   * one removed by mistake simply registers again. Paired screens are never touched.
+   */
+  async prunePending(now = new Date()): Promise<number> {
+    const before = new Date(now.getTime() - PENDING_KEEP_DAYS * 86_400_000);
+    const { count } = await this.prisma.screen.deleteMany({
+      where: { status: 'PENDING', name: null, pairedAt: null, updatedAt: { lt: before } },
+    });
+    if (count) this.logger.log(`Removed ${count} TV registration(s) never paired in ${PENDING_KEEP_DAYS} days`);
+    return count;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
