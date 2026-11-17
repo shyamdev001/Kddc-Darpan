@@ -386,6 +386,85 @@ describe('broadcasts', () => {
   });
 });
 
+describe('replacing a TV after a factory reset or a swap', () => {
+  it('moves the new TV onto the old screen: same name, branch, playlist and history', async () => {
+    const old = await pairedTv(t.base, admin, places.matarBranch.id, 'Nadiad hall');
+    const media = await createMedia(t.prisma, 'Hall poster');
+    const playlist = await createPlaylist(t.prisma, 'Hall ads', [media.id]);
+    await assign(t.prisma, playlist.id, 'SCREEN', old.deviceId);
+    await t.prisma.playLog.create({ data: { screenId: old.deviceId, mediaId: media.id, startedAt: new Date(), durationMs: 10_000 } });
+    await t.prisma.screen.update({
+      where: { id: old.deviceId },
+      data: { status: 'OFFLINE', safeMode: true, filesReady: 3, filesTotal: 5, capabilities: { webView: 70 } },
+    });
+
+    // Factory reset: a new Android id, so the TV registers as a new one and shows a fresh code.
+    const fresh = await call(t.base, 'POST', '/devices/register', {
+      body: { hardwareId: `hw-${randomUUID()}`, model: 'New panel', osVersion: '12', resolution: '1920x1080', appVersion: '0.2.0' },
+    });
+    assert.notEqual(fresh.body.deviceId, old.deviceId);
+
+    const res = await call(t.base, 'POST', `/screens/${old.deviceId}/replace`, { cookie: admin, body: { pairingCode: fresh.body.pairingCode } });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.id, old.deviceId);
+    assert.equal(res.body.name, 'Nadiad hall');
+    assert.equal(res.body.branch.id, places.matarBranch.id);
+
+    // The new TV now is that screen: it plays the screen's playlist, and its own registration is gone.
+    assert.deepEqual(await playlistNames({ ...old, deviceToken: fresh.body.deviceToken }), ['Hall ads']);
+    const status = await call(t.base, 'GET', '/devices/status', { token: fresh.body.deviceToken });
+    assert.equal(status.body.paired, true);
+    assert.equal(status.body.screenName, 'Nadiad hall');
+    assert.equal(await t.prisma.screen.count({ where: { id: fresh.body.deviceId } }), 0);
+    // The old TV (if it ever comes back) is out.
+    assert.equal((await call(t.base, 'GET', '/devices/manifest', { token: old.deviceToken })).status, 401);
+
+    const row = await t.prisma.screen.findUniqueOrThrow({ where: { id: old.deviceId } });
+    assert.equal(row.model, 'New panel');
+    assert.equal(row.appVersion, '0.2.0');
+    assert.equal(row.safeMode, false, "the old TV's state is not carried over");
+    assert.equal(row.filesTotal, null);
+    assert.equal(row.capabilities, null);
+    assert.equal(await t.prisma.playLog.count({ where: { screenId: old.deviceId } }), 1, 'proof of play stays with the screen');
+    const audit = await t.prisma.auditLog.findFirstOrThrow({ where: { action: 'screen.replace', entityId: old.deviceId } });
+    assert.equal((audit.details as { newModel: string }).newModel, 'New panel');
+  });
+
+  it('refuses a code that is wrong, expired, or belongs to another paired screen', async () => {
+    const target = await pairedTv(t.base, admin, places.matarBranch.id, 'Keep me');
+    const other = await pairedTv(t.base, admin, places.matarBranch.id, 'Someone else');
+    const before = await t.prisma.screen.findUniqueOrThrow({ where: { id: target.deviceId } });
+    const replace = (code: string) => call(t.base, 'POST', `/screens/${target.deviceId}/replace`, { cookie: admin, body: { pairingCode: code } });
+
+    assert.equal((await replace('000000')).status, 400);
+    const expired = await registerTv(t.base);
+    await t.prisma.screen.update({ where: { id: expired.deviceId }, data: { pairingExpires: new Date(Date.now() - 1000) } });
+    assert.equal((await replace(expired.pairingCode)).status, 400);
+    // A paired screen asking to be moved to new hardware shows a code too; it is not this screen's.
+    const otherRow = await t.prisma.screen.findUniqueOrThrow({ where: { id: other.deviceId } });
+    const copy = await call(t.base, 'POST', '/devices/register', {
+      body: { hardwareId: otherRow.hardwareId, model: 'X', osVersion: '11', resolution: '1920x1080' },
+    });
+    const res = await replace(copy.body.pairingCode);
+    assert.equal(res.status, 400);
+    assert.match(res.body.message, /another screen/);
+
+    const after = await t.prisma.screen.findUniqueOrThrow({ where: { id: target.deviceId } });
+    assert.equal(after.deviceTokenHash, before.deviceTokenHash);
+    assert.equal(after.hardwareId, before.hardwareId);
+    assert.equal(await t.prisma.screen.count({ where: { id: expired.deviceId } }), 1, 'nothing removed on a refusal');
+    assert.equal(await t.prisma.auditLog.count({ where: { action: 'screen.replace_failed', entityId: target.deviceId } }), 3);
+  });
+
+  it('is for head office only', async () => {
+    const target = await pairedTv(t.base, admin, places.matarBranch.id, 'Locked');
+    const tv = await registerTv(t.base);
+    const viewer = await login(t.base, await createUser(t.prisma, 'BRANCH_VIEWER'));
+    const res = await call(t.base, 'POST', `/screens/${target.deviceId}/replace`, { cookie: viewer, body: { pairingCode: tv.pairingCode } });
+    assert.equal(res.status, 403);
+  });
+});
+
 describe('abandoned registrations', () => {
   it('a TV registered but never paired, silent for 7 days, is removed; others stay', async () => {
     const svc = t.app.get(ScreensService);

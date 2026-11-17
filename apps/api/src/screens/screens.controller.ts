@@ -4,7 +4,7 @@ import type { Request, Response } from 'express';
 import type { AuthUser } from '../auth/auth.types';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { CommandsService } from './commands.service';
-import { ClaimScreenDto, SendCommandDto, SetPlaylistDto, UpdateScreenDto } from './screen.dto';
+import { ClaimScreenDto, ReplaceScreenDto, SendCommandDto, SetPlaylistDto, UpdateScreenDto } from './screen.dto';
 import { ScreensService } from './screens.service';
 
 @Controller()
@@ -36,6 +36,14 @@ export class ScreensController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   claim(@Body() dto: ClaimScreenDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     return this.screens.claim(dto, user, req.ip);
+  }
+
+  /** A factory-reset or swapped TV takes over this screen with the code it shows. Limited like claim. */
+  @Post('screens/:id/replace')
+  @Roles('HO_ADMIN')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  replace(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReplaceScreenDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    return this.screens.replaceDevice(id, dto.pairingCode, user, req.ip);
   }
 
   @Patch('screens/:id')

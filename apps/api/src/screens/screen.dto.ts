@@ -54,6 +54,12 @@ export class ClaimScreenDto {
   playlistId?: string | null;
 }
 
+export class ReplaceScreenDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/\s/g, '') : value))
+  @Matches(/^\d{6}$/, { message: 'Enter the 6-digit code shown on the TV' })
+  pairingCode!: string;
+}
+
 export class UpdateScreenDto {
   @IsOptional()
   @Transform(trim)

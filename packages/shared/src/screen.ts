@@ -142,6 +142,11 @@ export interface ClaimScreenRequest {
   playlistId?: string | null;
 }
 
+/** `POST /api/screens/:id/replace`: the code a factory-reset or swapped TV shows. */
+export interface ReplaceScreenRequest {
+  pairingCode: string;
+}
+
 export interface UpdateScreenRequest {
   name?: string;
   branchId?: string;

@@ -35,6 +35,32 @@ const screenInclude = {
 
 type ScreenRow = Prisma.ScreenGetPayload<{ include: typeof screenInclude }>;
 
+/**
+ * A replacement TV starts with a clean slate: everything below was reported by the old TV and says
+ * nothing about the new one. Its first heartbeat fills them in.
+ */
+const NEW_TV_STATE = {
+  storageFreeMb: null,
+  storageTotalMb: null,
+  ramFreeMb: null,
+  ramTotalMb: null,
+  currentMediaId: null,
+  manifestVersion: null,
+  kioskState: null,
+  appVersionCode: null,
+  updateStatus: null,
+  kioskUntil: null,
+  adbEnabled: null,
+  filesReady: null,
+  filesTotal: null,
+  downloadError: null,
+  lastCrash: Prisma.DbNull,
+  safeMode: false,
+  capabilities: Prisma.DbNull,
+  broadcastId: null,
+  broadcastStatus: null,
+} satisfies Prisma.ScreenUncheckedUpdateInput;
+
 const BAD_CODE = 'That code is not valid or has expired. Check the 6-digit code on the TV and try again.';
 
 function isUniqueViolation(err: unknown, field: string): boolean {
@@ -345,6 +371,70 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
     if (replacing) this.gateway.disconnectScreen(screen.id);
     this.events.screensChanged(screen.id);
     return this.detail(screen.id, user);
+  }
+
+  /**
+   * A TV that was factory reset (its Android id changes) or swapped for another one registers as a
+   * new TV and shows a code. Entering that code here moves the new TV onto this screen: the screen
+   * keeps its id, name, branch, playlists, schedules and history, and the new TV plays them. The
+   * new TV's own registration is removed, and whatever TV held this screen before loses access.
+   */
+  async replaceDevice(id: string, pairingCode: string, user: AuthUser, ip?: string): Promise<ScreenDetail> {
+    await this.detail(id, user);
+    const old = await this.prisma.screen.findUniqueOrThrow({ where: { id }, select: { name: true, hardwareId: true, model: true } });
+    const fresh = await this.prisma.screen.findUnique({ where: { pairingCode } });
+    const usable = !!fresh && !!fresh.pairingExpires && fresh.pairingExpires > new Date();
+    // The same TV registered again (app data cleared): its replacement token takes over, as in claim.
+    const sameTv = usable && fresh.id === id && fresh.replacementTokenHash !== null;
+    const newTv = usable && fresh.id !== id && fresh.status === 'PENDING' && fresh.name === null && fresh.pairedAt === null;
+    if (!fresh || (!sameTv && !newTv)) {
+      await this.audit.log({ userId: user.id, action: 'screen.replace_failed', entityType: 'Screen', entityId: id, ipAddress: ip });
+      throw new BadRequestException(
+        usable && fresh.id !== id && fresh.status !== 'PENDING'
+          ? 'That code is for another screen that is already paired. Check the code on the TV.'
+          : BAD_CODE,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      // Its hardware id and token move to this screen and both are unique, so the row goes first.
+      if (newTv) await tx.screen.delete({ where: { id: fresh.id } });
+      await tx.screen.update({
+        where: { id },
+        data: {
+          status: 'ONLINE',
+          pairingCode: null,
+          pairingExpires: null,
+          pairedAt: new Date(),
+          replacementTokenHash: null,
+          ...(newTv
+            ? {
+                hardwareId: fresh.hardwareId,
+                deviceTokenHash: fresh.deviceTokenHash,
+                model: fresh.model,
+                osVersion: fresh.osVersion,
+                appVersion: fresh.appVersion,
+                resolution: fresh.resolution,
+                ipAddress: fresh.ipAddress,
+                lastSeenAt: fresh.lastSeenAt,
+                ...NEW_TV_STATE,
+              }
+            : { deviceTokenHash: fresh.replacementTokenHash! }),
+        },
+      });
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: 'screen.replace',
+      entityType: 'Screen',
+      entityId: id,
+      details: { name: old.name, oldHardwareId: old.hardwareId, newHardwareId: fresh.hardwareId, oldModel: old.model, newModel: fresh.model },
+      ipAddress: ip,
+    });
+    // Whatever TV held this screen used the old token: close its live connection.
+    this.gateway.disconnectScreen(id);
+    this.events.screensChanged(id);
+    return this.detail(id, user);
   }
 
   async update(id: string, dto: UpdateScreenDto, user: AuthUser, ip?: string): Promise<ScreenDetail> {

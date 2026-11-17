@@ -76,6 +76,10 @@ Set it up once per TV, after a factory reset and before signing in to any accoun
    The last line should print `Success: Device owner set ...`. If it says there are already accounts or
    users on the device, remove them (or reset again) and retry.
 4. Open KDCC Darpan once (or restart the TV). It locks itself; you can turn developer options off again.
+5. A factory reset gives the TV a new Android id, so it shows a new pairing code as if it were a new TV.
+   If it was already a screen, do not pair it as a new one: on the dashboard open that screen and use
+   **Replace TV** with the code. The screen keeps its name, branch, playlists and play history. The same
+   works when a TV is swapped for another one.
 
 Maintenance (Wi-Fi changes, display settings):
 - From the dashboard: Screens > the screen > Remote control > **Unlock for 15 min**. Menu then opens the TV's

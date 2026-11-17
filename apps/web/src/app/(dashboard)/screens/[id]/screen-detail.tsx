@@ -29,6 +29,7 @@ import { ScreenGlyph, ScreenStatusText } from "../screen-glyph";
 import { SOURCE_TEXT } from "../screen-list";
 import { describeHours, describeSlot } from "../../schedules/format";
 import { RemoteCard } from "./remote-card";
+import { ReplaceTv } from "./replace-tv";
 
 export function ScreenDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -100,7 +101,7 @@ export function ScreenDetailView() {
             <SettingsCard key={screen.id + screen.name + screen.branch?.id + screen.orientation} screen={screen} onSaved={accept} />
           )}
         </div>
-        <DeviceCard screen={screen} ago={ago} now={now} canEdit={canEdit} />
+        <DeviceCard screen={screen} ago={ago} now={now} canEdit={canEdit} onReplaced={accept} />
       </div>
     </div>
   );
@@ -381,7 +382,19 @@ function mb(free: number | null, total: number | null): string | null {
   return total ? `${gb(free)} free of ${gb(total)}` : `${gb(free)} free`;
 }
 
-function DeviceCard({ screen, ago, now, canEdit }: { screen: ScreenDetail; ago: string | null; now: number; canEdit: boolean }) {
+function DeviceCard({
+  screen,
+  ago,
+  now,
+  canEdit,
+  onReplaced,
+}: {
+  screen: ScreenDetail;
+  ago: string | null;
+  now: number;
+  canEdit: boolean;
+  onReplaced: (s: ScreenDetail) => void;
+}) {
   const router = useRouter();
   const [confirm, setConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -454,7 +467,8 @@ function DeviceCard({ screen, ago, now, canEdit }: { screen: ScreenDetail; ago: 
 
       {canEdit && (
       <div className="rounded-xl border bg-card px-4 py-4 sm:px-5">
-        <p className="text-sm text-muted-foreground">
+        <ReplaceTv screen={screen} onReplaced={onReplaced} />
+        <p className="mt-4 border-t pt-4 text-sm text-muted-foreground">
           Removing forgets this TV. If the app is still running it shows a new code and can be paired again.
         </p>
         <Button
