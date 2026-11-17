@@ -85,8 +85,15 @@ jobs:
           if "$bt/aapt" dump badging kdcc-darpan.apk | grep -q application-debuggable; then
             echo "::error::The release APK is debuggable"; exit 1
           fi
-          "$bt/aapt" dump xmltree kdcc-darpan.apk res/xml/network_security_config.xml | tee nsc.txt
-          grep -Eq 'cleartextTrafficPermitted(\(0x[0-9a-f]+\))?=\(type 0x12\)0x0' nsc.txt || { echo "::error::The release APK allows plain HTTP"; exit 1; }
+          # Release builds may shorten resource file names: find the file through the resource table.
+          nsc=$("$bt/aapt2" dump resources kdcc-darpan.apk | grep -A3 'xml/network_security_config' | sed -n 's/.*(file) \([^ ]*\).*/\1/p' | head -1)
+          echo "network_security_config is at: ${nsc:-not found}"
+          "$bt/aapt2" dump xmltree --file "${nsc:-res/xml/network_security_config.xml}" kdcc-darpan.apk | tee nsc.txt || true
+          line=$(grep -i cleartextTrafficPermitted nsc.txt | head -1)
+          echo "::notice::Release network setting: ${line:-missing}"
+          if ! echo "$line" | grep -Eiq '=false|\)0x0$|=0x0$|"false"'; then
+            echo "::error::The release APK allows plain HTTP (or the check could not read it): ${line:-no cleartextTrafficPermitted found}"; exit 1
+          fi
           if [ -z "$DARPAN_KEYSTORE_PATH" ]; then
             echo "::warning::No signing key: the release APK is unsigned and cannot be installed. Set DARPAN_KEYSTORE_B64."
             exit 0
