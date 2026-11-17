@@ -376,6 +376,18 @@ function CrashNote({ crash, ago }: { crash: NonNullable<ScreenDetail["crash"]>; 
   );
 }
 
+/** How the TV keeps to the shared timeline, in words. */
+function playbackText(s: ScreenDetail): string | null {
+  const p = s.playSync;
+  if (p && !p.clockCertain) return "Clock not set: waiting for the internet";
+  if (!s.syncPlayback) return "Own pace (branch not kept in step)";
+  if (!p) return null;
+  if (p.mode === "free") return "Not in step yet: app update needed or waiting for its next check-in";
+  const parts = [p.offsetErrorMs !== null ? `In step (±${p.offsetErrorMs} ms)` : "In step, clock still settling"];
+  if (p.driftMs !== null) parts.push(`video ${Math.abs(p.driftMs)} ms ${p.driftMs > 0 ? "ahead" : "behind"}`);
+  return parts.join(", ");
+}
+
 function mb(free: number | null, total: number | null): string | null {
   if (free === null) return null;
   const gb = (n: number) => (n >= 1024 ? `${(n / 1024).toFixed(1)} GB` : `${n} MB`);
@@ -410,6 +422,7 @@ function DeviceCard({
     ["Network address", screen.ipAddress],
     ["Storage", mb(screen.storageFreeMb, screen.storageTotalMb)],
     ["Ad files", screen.files ? `${screen.files.ready} of ${screen.files.total} on the TV` : null],
+    ["Playback", playbackText(screen)],
     ["Memory", mb(screen.ramFreeMb, screen.ramTotalMb)],
     ["Paired on", screen.pairedAt ? formatDay(screen.pairedAt) : null],
   ];

@@ -295,3 +295,35 @@ describe('"Test screen off"', () => {
     assert.equal((await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body.capabilities.screenOff, false);
   });
 });
+
+describe('keeping screens in step', () => {
+  it('a branch setting turns it on for its TVs; each TV reports how close it is', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Synced TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    const sync = async () => (await call(t.base, 'GET', '/devices/manifest', { token: tv.deviceToken })).body.settings.sync;
+    const detail = async () => (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body;
+
+    assert.equal(await sync(), false, 'off until head office turns it on');
+    assert.equal((await detail()).syncPlayback, false);
+    const res = await call(t.base, 'PATCH', `/branches/${places.matarBranch.id}`, { cookie: admin, body: { syncPlayback: true } });
+    assert.equal(res.status, 200);
+    assert.equal(await sync(), true);
+    assert.equal((await detail()).syncPlayback, true);
+    const audit = await t.prisma.auditLog.findFirst({ where: { action: 'branch.update', entityId: places.matarBranch.id }, orderBy: { createdAt: 'desc' } });
+    assert.deepEqual((audit?.details as { after: { syncPlayback: boolean } }).after.syncPlayback, true);
+
+    assert.equal((await detail()).playSync, null, 'unknown until the TV says');
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, sync: { mode: 'synced', offsetErrorMs: 12, driftMs: -35, clockCertain: true, extra: 1 } });
+    assert.deepEqual((await detail()).playSync, { mode: 'synced', offsetErrorMs: 12, driftMs: -35, clockCertain: true });
+    // Nonsense is ignored, the last good report stays.
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, sync: { mode: 'sideways' } });
+    assert.equal((await detail()).playSync.driftMs, -35);
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, sync: { mode: 'free', offsetErrorMs: null, driftMs: 99, clockCertain: false } });
+    assert.deepEqual((await detail()).playSync, { mode: 'free', offsetErrorMs: null, driftMs: null, clockCertain: false });
+
+    await call(t.base, 'PATCH', `/branches/${places.matarBranch.id}`, { cookie: admin, body: { syncPlayback: false } });
+    assert.equal(await sync(), false);
+  });
+});

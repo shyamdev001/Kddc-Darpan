@@ -122,6 +122,10 @@ export class UpdateBranchDto {
   address?: string | null;
 
   @IsOptional()
+  @IsBoolean()
+  syncPlayback?: boolean;
+
+  @IsOptional()
   @IsUUID()
   talukaId?: string;
 }

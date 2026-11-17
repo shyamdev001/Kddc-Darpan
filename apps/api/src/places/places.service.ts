@@ -89,7 +89,7 @@ export class PlacesService {
         const branches: BranchNode[] = t.branches.map((b) => {
           const bc = perBranch.get(b.id) ?? counts();
           add(tc, bc);
-          return { id: b.id, code: b.code, name: b.name, address: b.address, playlist: own.get(`BRANCH:${b.id}`) ?? null, screens: bc };
+          return { id: b.id, code: b.code, name: b.name, address: b.address, syncPlayback: b.syncPlayback, playlist: own.get(`BRANCH:${b.id}`) ?? null, screens: bc };
         });
         add(rc, tc);
         return { id: t.id, name: t.name, playlist: own.get(`TALUKA:${t.id}`) ?? null, screens: tc, branches };
@@ -200,13 +200,13 @@ export class PlacesService {
     try {
       const b = await this.prisma.branch.update({
         where: { id },
-        data: { name: dto.name, code: dto.code, address: dto.address, talukaId: dto.talukaId },
+        data: { name: dto.name, code: dto.code, address: dto.address, talukaId: dto.talukaId, syncPlayback: dto.syncPlayback },
       });
       await this.log(user, ip, 'branch.update', 'Branch', id, {
-        before: { name: before.name, code: before.code, address: before.address, talukaId: before.talukaId },
-        after: { name: b.name, code: b.code, address: b.address, talukaId: b.talukaId },
+        before: { name: before.name, code: before.code, address: before.address, talukaId: before.talukaId, syncPlayback: before.syncPlayback },
+        after: { name: b.name, code: b.code, address: b.address, talukaId: b.talukaId, syncPlayback: b.syncPlayback },
       });
-      if (b.talukaId !== before.talukaId) await this.notify({ branchId: id });
+      if (b.talukaId !== before.talukaId || b.syncPlayback !== before.syncPlayback) await this.notify({ branchId: id });
       return b;
     } catch (err) {
       if (uniqueClash(err)) throw new ConflictException(`Branch code ${dto.code} is already used by another branch`);

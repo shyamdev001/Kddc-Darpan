@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { cleanCapabilities } from './capabilities';
+import { cleanPlaySync } from './play-sync';
 import { crashReport } from './crash-report';
 import {
   KIOSK_STATES,
@@ -28,7 +29,7 @@ import { PlaylistResolver, type ResolvedPlaylist } from './playlist-resolver.ser
 import type { ClaimScreenDto, RegisterDeviceDto, UpdateScreenDto } from './screen.dto';
 
 const screenInclude = {
-  branch: { select: { id: true, name: true, code: true, talukaId: true, taluka: { select: { regionId: true } } } },
+  branch: { select: { id: true, name: true, code: true, talukaId: true, syncPlayback: true, taluka: { select: { regionId: true } } } },
   currentMedia: { select: { id: true, displayName: true } },
   assignments: { where: { targetType: 'SCREEN', schedules: { none: {} } }, select: { playlistId: true } },
 } satisfies Prisma.ScreenInclude;
@@ -57,6 +58,7 @@ const NEW_TV_STATE = {
   lastCrash: Prisma.DbNull,
   safeMode: false,
   capabilities: Prisma.DbNull,
+  playSync: Prisma.DbNull,
   broadcastId: null,
   broadcastStatus: null,
 } satisfies Prisma.ScreenUncheckedUpdateInput;
@@ -321,6 +323,8 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
       crash: screenCrash(s.lastCrash),
       safeMode: s.safeMode,
       capabilities: cleanCapabilities(s.capabilities),
+      playSync: cleanPlaySync(s.playSync),
+      syncPlayback: s.branch?.syncPlayback ?? false,
       pairedAt: s.pairedAt?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
       ownPlaylistId: s.assignments[0]?.playlistId ?? null,

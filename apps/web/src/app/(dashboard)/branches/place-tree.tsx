@@ -209,7 +209,7 @@ export function PlaceTreeView() {
                             />
                           }
                           onEdit={() =>
-                            setEdit({ kind: "branch", id: b.id, name: b.name, code: b.code, address: b.address, talukaId: t.id })
+                            setEdit({ kind: "branch", id: b.id, name: b.name, code: b.code, address: b.address, syncPlayback: b.syncPlayback, talukaId: t.id })
                           }
                           onRemove={() => setRemoval({ kind: "branch", id: b.id, name: b.name })}
                         />

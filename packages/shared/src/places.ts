@@ -18,6 +18,8 @@ export interface BranchNode {
   code: string | null;
   name: string;
   address: string | null;
+  /** TVs here show the same item at the same moment. */
+  syncPlayback: boolean;
   /** Playlist set on this branch itself, not inherited. */
   playlist: PlacePlaylist | null;
   screens: ScreenCounts;
@@ -58,6 +60,7 @@ export interface CreateBranchRequest {
   code?: string | null;
   address?: string | null;
   talukaId: string;
+  syncPlayback?: boolean;
 }
 export type UpdateRegionRequest = Partial<CreateRegionRequest>;
 export type UpdateTalukaRequest = Partial<CreateTalukaRequest>;

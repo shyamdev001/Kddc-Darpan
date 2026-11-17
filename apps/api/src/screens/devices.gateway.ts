@@ -17,6 +17,7 @@ import { ContentEvents } from '../events/content-events';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { cleanCapabilities } from './capabilities';
+import { cleanPlaySync } from './play-sync';
 import { crashReport } from './crash-report';
 import { hashDeviceToken } from './device-auth';
 import { ManifestService } from './manifest.service';
@@ -164,6 +165,8 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
         ...(typeof body.adbEnabled === 'boolean' ? { adbEnabled: body.adbEnabled } : {}),
         ...(typeof body.safeMode === 'boolean' ? { safeMode: body.safeMode } : {}),
         ...(cleanCapabilities(body.capabilities) ? { capabilities: cleanCapabilities(body.capabilities) as unknown as Prisma.InputJsonObject } : {}),
+        // Older app versions send no sync report: leave what we had.
+        ...(cleanPlaySync(body.sync) ? { playSync: cleanPlaySync(body.sync) as unknown as Prisma.InputJsonObject } : {}),
         ...('crash' in body ? { lastCrash: (crashReport(body.crash) as Prisma.InputJsonObject | null) ?? Prisma.DbNull } : {}),
         // Older app versions send no download summary: leave what we had.
         ...(count(body.filesReady) !== undefined && count(body.filesTotal) !== undefined && body.filesReady! <= body.filesTotal!

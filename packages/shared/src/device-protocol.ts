@@ -56,6 +56,20 @@ export interface ManifestSettings {
   orientation: 'LANDSCAPE' | 'PORTRAIT';
   /** When the screen is on (Asia/Kolkata). null = always on. */
   hours: DisplayHoursValue | null;
+  /** Keep to the shared timeline, in step with the other TVs (set per branch). */
+  sync?: boolean;
+}
+
+/** How a TV keeps to the shared timeline, sent in each heartbeat. */
+export interface PlaySyncReport {
+  /** synced: on the shared timeline; free: its own loop (sync off for its branch). */
+  mode: 'synced' | 'free';
+  /** How far the TV's idea of the server time can be off (half the quickest round trip); null before the first answer. */
+  offsetErrorMs: number | null;
+  /** The playing video's distance from the timeline (positive = ahead); null when no video is playing. */
+  driftMs: number | null;
+  /** False after a power cut with no internet: the TV does not know the time yet. */
+  clockCertain: boolean;
 }
 
 export interface Manifest {
@@ -125,6 +139,7 @@ export interface HeartbeatPayload {
   safeMode?: boolean;
   /** What this TV model can do, detected on the TV at each start. */
   capabilities?: TvCapabilities;
+  sync?: PlaySyncReport;
 }
 
 /**

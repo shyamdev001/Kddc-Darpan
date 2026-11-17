@@ -134,7 +134,8 @@ export class ManifestService implements OnModuleDestroy {
       : null;
     const items = fallbackItem ? [fallbackItem, ...[...media.values()].filter((i) => i.mediaId !== fallbackItem.mediaId)] : [...media.values()];
     const fallbackMediaId = fallbackItem?.mediaId ?? null;
-    const settings: ManifestSettings = { orientation: screen.orientation, hours: hours?.hours ?? null };
+    const sync = screen.branchId ? ((await this.prisma.branch.findUnique({ where: { id: screen.branchId }, select: { syncPlayback: true } }))?.syncPlayback ?? false) : false;
+    const settings: ManifestSettings = { orientation: screen.orientation, hours: hours?.hours ?? null, sync };
     const app = await this.appOffer(screen.testUpdates);
     const broadcast = toManifestBroadcast(broadcasts.get(screen.id) ?? null);
     // The version only changes when what the TV must do changes, so it can skip identical manifests.

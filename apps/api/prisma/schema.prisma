@@ -92,6 +92,8 @@ model Taluka {
 
 model Branch {
   id        String   @id @default(uuid()) @db.Uuid
+  // TVs in this branch play the same item at the same moment (docs: SYNC_DESIGN.md). Off: each TV runs its own loop.
+  syncPlayback Boolean @default(false)
   code      String?  @unique // bank's own branch code
   name      String
   address   String?
@@ -148,6 +150,7 @@ model Screen {
   lastCrash       Json? // the app's last crash as the TV reported it (type, message, top frames, counts)
   safeMode        Boolean   @default(false) // crash-looping: posters only for now
   capabilities    Json? // what this TV model can do (WebView, decoders, brightness, screen-off...), from the TV
+  playSync        Json? // how well the TV keeps to the shared timeline (mode, clock error, video drift), from the heartbeat
   broadcastId     String?   @db.Uuid // the broadcast the TV says it is showing (no FK: it may be deleted)
   broadcastStatus String? // playing | loading | error: ..., from the heartbeat
   lastSeenAt      DateTime?

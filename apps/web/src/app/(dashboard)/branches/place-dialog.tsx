@@ -14,7 +14,7 @@ import { apiFetch } from "@/lib/api-client";
 export type PlaceEdit =
   | { kind: "region"; id?: string; name?: string }
   | { kind: "taluka"; id?: string; name?: string; regionId: string }
-  | { kind: "branch"; id?: string; name?: string; code?: string | null; address?: string | null; talukaId: string };
+  | { kind: "branch"; id?: string; name?: string; code?: string | null; address?: string | null; syncPlayback?: boolean; talukaId: string };
 
 const NOUN = { region: "region", taluka: "taluka", branch: "branch" } as const;
 
@@ -44,6 +44,7 @@ function PlaceForm({ edit, tree, onClose, onSaved }: { edit: PlaceEdit; tree: Pl
   const [name, setName] = useState(edit.name ?? "");
   const [code, setCode] = useState(edit.kind === "branch" ? (edit.code ?? "") : "");
   const [address, setAddress] = useState(edit.kind === "branch" ? (edit.address ?? "") : "");
+  const [syncPlayback, setSyncPlayback] = useState(edit.kind === "branch" ? (edit.syncPlayback ?? false) : false);
   const [parentId, setParentId] = useState(edit.kind === "taluka" ? edit.regionId : edit.kind === "branch" ? edit.talukaId : "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +57,7 @@ function PlaceForm({ edit, tree, onClose, onSaved }: { edit: PlaceEdit; tree: Pl
     setError(null);
     let body: Record<string, unknown> = { name };
     if (edit.kind === "taluka") body = { ...body, regionId: parentId };
-    if (edit.kind === "branch") body = { ...body, code: code || null, address: address || null, talukaId: parentId };
+    if (edit.kind === "branch") body = { ...body, code: code || null, address: address || null, talukaId: parentId, ...(isNew ? {} : { syncPlayback }) };
     const path = `/api/${edit.kind === "branch" ? "branches" : `${edit.kind}s`}${isNew ? "" : `/${edit.id}`}`;
     try {
       await apiFetch(path, { method: isNew ? "POST" : "PATCH", body: JSON.stringify(body) });
@@ -130,6 +131,25 @@ function PlaceForm({ edit, tree, onClose, onSaved }: { edit: PlaceEdit; tree: Pl
                 className="h-10 bg-card"
               />
             </div>
+            {!isNew && (
+              <div className="flex items-start gap-3">
+                <input
+                  id="place-sync"
+                  type="checkbox"
+                  checked={syncPlayback}
+                  onChange={(e) => setSyncPlayback(e.target.checked)}
+                  aria-describedby="place-sync-help"
+                  className="mt-0.5 size-4 accent-neel"
+                />
+                <div className="grid gap-0.5">
+                  <Label htmlFor="place-sync">Keep screens in step</Label>
+                  <p id="place-sync-help" className="text-sm text-muted-foreground">
+                    TVs here that play the same playlist show the same ad at the same moment. Worth it where two screens are in
+                    view together.
+                  </p>
+                </div>
+              </div>
+            )}
             {!isNew && (
               <div className="grid gap-2">
                 <Label htmlFor="place-parent">Taluka</Label>

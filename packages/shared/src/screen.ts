@@ -1,5 +1,5 @@
 import type { DisplayHoursValue, TimeSlot } from './schedule';
-import type { TvCapabilities } from './device-protocol';
+import type { PlaySyncReport, TvCapabilities } from './device-protocol';
 // Dashboard view of screens (TVs). Device-side shapes live in device-protocol.ts.
 import type { Orientation } from './enums';
 
@@ -122,6 +122,10 @@ export interface ScreenDetail extends ScreenSummary {
   safeMode: boolean;
   /** What the TV says it can do; null for app versions that do not report it. */
   capabilities: TvCapabilities | null;
+  /** How the TV keeps to the shared timeline; null for app versions that do not report it. */
+  playSync: PlaySyncReport | null;
+  /** Its branch keeps screens in step. */
+  syncPlayback: boolean;
   pairedAt: string | null;
   createdAt: string;
   /** playlist set directly on this screen (null = inherits from branch/taluka/region/all) */
