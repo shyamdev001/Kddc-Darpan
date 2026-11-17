@@ -59,7 +59,18 @@ jobs:
         run: docker compose up -d --build --wait --wait-timeout 300
 
       - name: Health through HTTPS
-        run: curl -fsSk https://localhost/api/health | tee /dev/stderr | grep -q '"db":"ok"'
+        run: |
+          curl -fsSk https://localhost/api/health | tee health.json
+          grep -q '"db":"ok"' health.json
+          grep -q '"status":"ok"' health.json
+          grep -q '"freeMb":[0-9]' health.json
+          grep -q '"queue":{"waiting":0' health.json
+
+      - name: Log size limits on every service
+        run: |
+          for c in $(docker compose ps -q); do
+            docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Config}}' "$c" | tee /dev/stderr | grep -q 'max-size:10m'
+          done
 
       - name: Dashboard sign-in page, with security headers
         run: |

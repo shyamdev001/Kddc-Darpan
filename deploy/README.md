@@ -34,7 +34,23 @@ the API restarts.
 
 - Status: `docker compose ps` (all should say `healthy` or `running`)
 - Logs: `docker compose logs -f api` (logs are capped at 50 MB per service)
-- Health from outside: `https://<your domain>/api/health`
+- Health from outside: `https://<your domain>/api/health`. It says `"status":"ok"`, or `"warn"` with
+  the reason: less than 2 GB disk free (`HEALTH_MIN_FREE_GB` in `.env` changes this), or an upload
+  waiting more than 30 minutes for processing.
+
+## Monitoring (Uptime Kuma)
+
+Uptime Kuma checks the health address every minute and emails when it fails or warns.
+
+1. Start it: `docker compose --profile monitoring up -d uptime-kuma`
+2. Its page listens only on the server. From your PC: `ssh -L 3001:127.0.0.1:3001 <user>@<server>`,
+   then open http://localhost:3001 and create the admin account.
+3. Add a monitor: type **HTTP(s) - Keyword**, URL `https://<your domain>/api/health`, keyword
+   `"status":"ok"`, interval 60 s. This fails when the API is down *and* when it warns.
+4. Settings → Notifications: add the bank's SMTP server (the same one as in `.env`) and tick it on the monitor.
+
+It runs on the same server, so it cannot report the whole server going down. For that, add a free
+outside check of the same address from a second machine, such as the head-office PC.
 
 ## Where the data lives
 
