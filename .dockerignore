@@ -1,0 +1,17 @@
+# Only source goes into the images. Never secrets, internal documents or build leftovers.
+**/node_modules
+**/dist
+**/dist-test
+**/.next
+**/*.tsbuildinfo
+apps/api/src/generated
+apps/tv
+docs
+.git
+.github
+.env
+.env.*
+**/.env
+deploy
+CLAUDE.local.md
+*.log

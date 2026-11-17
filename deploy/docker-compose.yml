@@ -1,0 +1,98 @@
+# KDCC Darpan production stack: database, API, dashboard and Caddy (HTTPS).
+# On the server, from this folder:
+#   cp production.env.example .env      # then fill it in
+#   docker compose up -d --build
+# Full steps: deploy/README.md
+
+name: darpan
+
+x-logs: &logs
+  # Keep container logs from filling the disk: at most 5 files of 10 MB per service.
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: darpan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: darpan_prod
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U darpan -d darpan_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # No ports: the database is reachable only from the API, never from the internet.
+    <<: *logs
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://darpan:${POSTGRES_PASSWORD}@db:5432/darpan_prod?schema=public
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_DIR: /data/media
+      # Caddy and the dashboard reach the API from this network; only they may report a client's address.
+      TRUST_PROXY: 172.28.0.0/16
+    volumes:
+      - media:/data/media
+    depends_on:
+      db:
+        condition: service_healthy
+    <<: *logs
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_URL: http://api:4000
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_URL: http://api:4000
+    depends_on:
+      api:
+        condition: service_healthy
+    <<: *logs
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DARPAN_DOMAIN: ${DARPAN_DOMAIN:?Set DARPAN_DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    <<: *logs
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  pgdata:
+  media:
+  caddy_data:
+  caddy_config:

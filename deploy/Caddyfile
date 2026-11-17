@@ -1,0 +1,33 @@
+# HTTPS in front of KDCC Darpan. Caddy gets and renews the certificate on its own.
+{$DARPAN_DOMAIN} {
+	# Videos up to 500 MB (MEDIA_MAX_VIDEO_MB) plus the form wrapping.
+	request_body {
+		max_size 520MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	# The API directly: dashboard calls and uploads, TV downloads, and both live connections
+	# (the dashboard's /api/realtime and the TVs' /socket.io). Caddy passes WebSockets on as they are.
+	@api path /api/* /socket.io/*
+	handle @api {
+		reverse_proxy api:4000 {
+			# Uploads and big downloads on slow branch links take minutes.
+			transport http {
+				read_timeout 15m
+				write_timeout 15m
+			}
+		}
+	}
+
+	# Everything else is the dashboard.
+	handle {
+		encode zstd gzip
+		reverse_proxy web:3000
+	}
+}
