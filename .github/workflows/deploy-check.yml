@@ -83,7 +83,10 @@ jobs:
 
       - name: Backup runs, and a restore drill gets the same data back
         run: |
-          docker compose exec -T api sh -c 'echo probe > /data/media/ci-probe.txt'
+          # As the user the API runs as: uploads must be able to write here.
+          docker compose exec -T -u node api sh -c 'echo probe > /data/media/ci-probe.txt'
+          # The API itself runs as "node", not root.
+          docker compose exec -T api sh -c 'for p in /proc/[0-9]*; do tr "\000" " " < $p/cmdline 2>/dev/null | grep -q "^node dist/main.js" && stat -c %U $p; done' | grep -qx node
           docker compose exec -T backup sh /scripts/backup.sh
           ls -l backups/db/darpan-*.dump
           test -f backups/media/ci-probe.txt

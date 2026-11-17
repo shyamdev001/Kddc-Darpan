@@ -29,11 +29,12 @@ ENV NODE_ENV=production \
     STORAGE_LOCAL_DIR=/data/media
 WORKDIR /app
 COPY --from=build --chown=node:node /app /app
-USER node
 WORKDIR /app/apps/api
 EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 ENTRYPOINT ["tini", "--"]
-# Apply any new database migrations, then start. Safe to repeat: applied ones are skipped.
-CMD ["sh", "-c", "npx prisma migrate deploy && exec node dist/main.js"]
+# Starts as root only to make the media volume ours (another container, e.g. the backup service,
+# may have created it first, owned by root), then runs as the unprivileged "node" user:
+# apply any new database migrations (applied ones are skipped), then start.
+CMD ["sh", "-c", "chown node:node /data/media && exec setpriv --reuid=node --regid=node --init-groups sh -c 'npx prisma migrate deploy && exec node dist/main.js'"]
