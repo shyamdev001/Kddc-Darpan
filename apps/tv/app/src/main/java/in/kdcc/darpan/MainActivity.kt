@@ -607,7 +607,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         stopLive()
         pairPanel.visibility = View.GONE
         setupPanel.visibility = View.VISIBLE
-        serverInput.setText(prefs.serverUrl.ifBlank { "http://" })
+        serverInput.setText(prefs.serverUrl.ifBlank { if (BuildConfig.DEBUG) "http://" else "https://" })
         serverInput.setSelection(serverInput.text.length)
         serverInput.requestFocus()
         setupMessage.text = message ?: ""
@@ -647,12 +647,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
         null
     }
 
-    private fun normalizeUrl(input: String): String? {
-        var s = input.trim().trimEnd('/')
-        if (s.isEmpty() || s == "http:" || s == "http://") return null
-        if (!s.startsWith("http://") && !s.startsWith("https://")) s = "http://$s"
-        return if (Regex("^https?://[^\\s/]+(:\\d+)?$").matches(s)) s else null
-    }
+    /** Release builds accept only https addresses (see ServerAddress). */
+    private fun normalizeUrl(input: String): String? = ServerAddress.normalize(input, allowHttp = BuildConfig.DEBUG)
 
     @Suppress("DEPRECATION")
     private fun resolution(): String {

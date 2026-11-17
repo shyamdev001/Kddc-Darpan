@@ -54,13 +54,13 @@ jobs:
           set -o pipefail
           gradle testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
 
-      - name: Build debug APK
+      - name: Build APKs (release for branch TVs, debug for head-office testing)
         env:
           DARPAN_KEYSTORE_PASSWORD: ${{ secrets.DARPAN_KEYSTORE_PASSWORD }}
           DARPAN_SERVER_URL: ${{ vars.DARPAN_SERVER_URL }}
         run: |
           set -o pipefail
-          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          gradle assembleRelease assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
 
       # Turn Kotlin/Gradle errors into annotations, readable without opening the log.
       - name: Report build errors
@@ -70,12 +70,40 @@ jobs:
             echo "::error::$line"
           done
 
-      - name: Name the APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk kdcc-darpan.apk
+      - name: Name the APKs
+        run: |
+          release=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          cp "$release" kdcc-darpan.apk
+          cp app/build/outputs/apk/debug/app-debug.apk kdcc-darpan-debug.apk
+
+      # The branch build must not be debuggable, must refuse plain HTTP, and must carry the KDCC key.
+      - name: Check the release APK
+        env:
+          PINNED_SIGNER: ${{ vars.DARPAN_SIGNER_SHA256 }}
+        run: |
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          if "$bt/aapt" dump badging kdcc-darpan.apk | grep -q application-debuggable; then
+            echo "::error::The release APK is debuggable"; exit 1
+          fi
+          "$bt/aapt" dump xmltree kdcc-darpan.apk res/xml/network_security_config.xml | tee nsc.txt
+          grep -Eq 'cleartextTrafficPermitted(\(0x[0-9a-f]+\))?=\(type 0x12\)0x0' nsc.txt || { echo "::error::The release APK allows plain HTTP"; exit 1; }
+          if [ -z "$DARPAN_KEYSTORE_PATH" ]; then
+            echo "::warning::No signing key: the release APK is unsigned and cannot be installed. Set DARPAN_KEYSTORE_B64."
+            exit 0
+          fi
+          signer=$("$bt/apksigner" verify --print-certs kdcc-darpan.apk | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
+          echo "Signer SHA-256: $signer"
+          want=$(echo "$PINNED_SIGNER" | tr 'A-F' 'a-f' | tr -d ': ')
+          if [ -n "$want" ] && [ "$signer" != "$want" ]; then
+            echo "::error::Signed with a different key than DARPAN_SIGNER_SHA256. Installed TVs would refuse this update."; exit 1
+          fi
+          [ -n "$PINNED_SIGNER" ] || echo "::notice::Set the repository variable DARPAN_SIGNER_SHA256=$signer to have every build checked against it."
 
       - uses: actions/upload-artifact@v4
         with:
           name: kdcc-darpan-apk
-          path: apps/tv/kdcc-darpan.apk
+          path: |
+            apps/tv/kdcc-darpan.apk
+            apps/tv/kdcc-darpan-debug.apk
           if-no-files-found: error
           retention-days: 30

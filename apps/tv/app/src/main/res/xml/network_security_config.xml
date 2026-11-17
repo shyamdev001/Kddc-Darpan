@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Plain HTTP is allowed for the head-office LAN during Phase 1. Production uses HTTPS (Caddy). -->
+<!-- Release (branch TVs): HTTPS only, so the TV's key and content never cross branch Wi-Fi in plain
+     text. The debug build (head-office testing on the LAN) allows HTTP: src/debug/res/xml. -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true" />
+    <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

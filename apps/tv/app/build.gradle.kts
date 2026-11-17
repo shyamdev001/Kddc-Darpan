@@ -41,7 +41,17 @@ android {
     }
 
     buildTypes {
+        // Head-office testing only: debuggable, and plain HTTP to a laptop on the LAN is allowed.
         debug {
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("darpan")
+        }
+        // What branch TVs run: not debuggable (adb cannot read the TV's key), HTTPS only.
+        // Same key as the debug build, so either installs over the other.
+        // Code shrinking (R8) stays off until a shrunk build has been tested on a real TV:
+        // a missing keep rule would only show up as a crash at a branch.
+        release {
+            isDebuggable = false
+            isMinifyEnabled = false
             if (keystorePath != null) signingConfig = signingConfigs.getByName("darpan")
         }
     }

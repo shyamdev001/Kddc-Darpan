@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Debug build: a laptop on the LAN over plain HTTP is allowed. -->
+    <string name="setup_hint">Type the address of the Darpan server, for example http://10.0.0.5:4000</string>
+</resources>
