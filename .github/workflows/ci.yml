@@ -52,6 +52,13 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Known security holes in what runs on the server. Fails on high or critical; moderate ones are
+      # printed for the record. The public registry is named because some mirrors lack the audit API.
+      - name: Security advisories (npm audit)
+        run: |
+          npm audit --registry=https://registry.npmjs.org --omit=dev || true
+          npm audit --registry=https://registry.npmjs.org --omit=dev --audit-level=high
+
       - name: Shared types
         run: npm run build -w @darpan/shared
 
