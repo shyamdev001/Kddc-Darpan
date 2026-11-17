@@ -16,6 +16,7 @@ class DarpanApp : Application() {
     override fun onCreate() {
         super.onCreate()
         crashes = CrashLog(filesDir)
+        watchPlayback()
         TrustedClock.init(this)
         WatchdogReceiver.schedule(this)
         // If anything crashes, come back in a few seconds instead of leaving a branch TV on the home screen.
@@ -25,6 +26,24 @@ class DarpanApp : Application() {
             scheduleRestart(this)
             exitProcess(2)
         }
+    }
+
+    /**
+     * Every minute, off the main thread (a frozen main thread must not freeze this check too):
+     * a picture stuck on screen during display hours restarts the app.
+     */
+    private fun watchPlayback() {
+        val timer = java.util.Timer("darpan-pulse", true)
+        timer.schedule(object : java.util.TimerTask() {
+            override fun run() {
+                if (!MainActivity.visible || Kiosk.inMaintenance(this@DarpanApp)) return
+                val stuck = PlaybackPulse.stalledFor(android.os.SystemClock.elapsedRealtime()) ?: return
+                Log.e("DarpanApp", "Playback stuck for ${stuck / 60_000} min; restarting")
+                crashes.record(PlaybackStalledException(stuck / 60_000))
+                scheduleRestart(this@DarpanApp)
+                exitProcess(3)
+            }
+        }, 60_000L, 60_000L)
     }
 
     companion object {

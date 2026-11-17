@@ -232,7 +232,17 @@ class Playback(
     }
 
     private suspend fun run() {
+        val pulse = PlaybackPulse.start(SystemClock.elapsedRealtime())
+        try {
+            loopForever()
+        } finally {
+            PlaybackPulse.stop(pulse)
+        }
+    }
+
+    private suspend fun loopForever() {
         while (scope.isActive) {
+            PlaybackPulse.beat(SystemClock.elapsedRealtime())
             val m = manifest
             val now = TrustedClock.now()
             if (m == null) {
@@ -267,6 +277,7 @@ class Playback(
             position = (position + 1) % cues.size
             val cue = cues[position]
             val item = cue.item
+            PlaybackPulse.beat(SystemClock.elapsedRealtime(), cue.durationSec * 1000L)
             val shown = try {
                 if (item.isVideo) playVideo(item, cue.durationSec) else showImage(cue, cues)
             } catch (e: CancellationException) {
