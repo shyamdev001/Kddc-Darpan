@@ -1,0 +1,36 @@
+{
+  "about": "Schedule edge cases. Both copies of the rules must pass every case: packages/shared/src/schedule.ts (apps/api/test/schedule-vectors.test.ts) and the TV's Schedule.kt (ScheduleVectorsTest.kt). Times are India time; 12 Nov 2026 is a Thursday, 1 Nov 2026 a Sunday.",
+  "cases": [
+    { "name": "past midnight: late evening is on", "slot": { "start": "22:00", "end": "02:00" }, "at": "2026-11-17T23:30:00+05:30", "expect": true },
+    { "name": "past midnight: early hours are on", "slot": { "start": "22:00", "end": "02:00" }, "at": "2026-11-18T01:59:59+05:30", "expect": true },
+    { "name": "past midnight: ends exactly at the end time", "slot": { "start": "22:00", "end": "02:00" }, "at": "2026-11-18T02:00:00+05:30", "expect": false },
+    { "name": "past midnight: not before the start", "slot": { "start": "22:00", "end": "02:00" }, "at": "2026-11-17T21:59:59+05:30", "expect": false },
+    { "name": "past midnight, Fridays: Saturday 1 am belongs to Friday", "slot": { "days": [5], "start": "22:00", "end": "02:00" }, "at": "2026-11-21T01:00:00+05:30", "expect": true },
+    { "name": "past midnight, Fridays: Friday 1 am belongs to Thursday", "slot": { "days": [5], "start": "22:00", "end": "02:00" }, "at": "2026-11-20T01:00:00+05:30", "expect": false },
+    { "name": "last day's window runs on past midnight", "slot": { "start": "22:00", "end": "02:00", "toDate": "2026-11-30" }, "at": "2026-12-01T01:00:00+05:30", "expect": true },
+    { "name": "after the last day's window, nothing", "slot": { "start": "22:00", "end": "02:00", "toDate": "2026-11-30" }, "at": "2026-12-01T23:00:00+05:30", "expect": false },
+    { "name": "first day: its early hours belong to the day before", "slot": { "start": "22:00", "end": "02:00", "fromDate": "2026-12-01" }, "at": "2026-12-01T01:00:00+05:30", "expect": false },
+    { "name": "first day: on from its evening", "slot": { "start": "22:00", "end": "02:00", "fromDate": "2026-12-01" }, "at": "2026-12-01T22:00:00+05:30", "expect": true },
+    { "name": "year end: Thursday 31 Dec runs into New Year", "slot": { "days": [4], "start": "23:00", "end": "01:00", "toDate": "2026-12-31" }, "at": "2027-01-01T00:30:00+05:30", "expect": true },
+    { "name": "end at midnight: on until 23:59", "slot": { "start": "18:00", "end": "00:00" }, "at": "2026-11-17T23:59:59+05:30", "expect": true },
+    { "name": "end at midnight: off at 00:00", "slot": { "start": "18:00", "end": "00:00" }, "at": "2026-11-18T00:00:00+05:30", "expect": false },
+    { "name": "India time, not UTC: 03:45 UTC is 09:15 IST", "slot": { "start": "09:00", "end": "10:00" }, "at": "2026-11-17T03:45:00Z", "expect": true },
+    { "name": "India time, not UTC: 09:15 UTC is 14:45 IST", "slot": { "start": "09:00", "end": "10:00" }, "at": "2026-11-17T09:15:00Z", "expect": false },
+    { "name": "India date, not UTC date: 20:00 UTC on the 30th is 1 Dec in India", "slot": { "toDate": "2026-11-30" }, "at": "2026-11-30T20:00:00Z", "expect": false },
+    { "name": "same start and end: the whole of that day", "slot": { "days": [2], "start": "10:00", "end": "10:00" }, "at": "2026-11-17T23:59:00+05:30", "expect": true },
+    { "name": "same start and end: not the next morning", "slot": { "days": [2], "start": "10:00", "end": "10:00" }, "at": "2026-11-18T05:00:00+05:30", "expect": false },
+    { "name": "no start: from midnight", "slot": { "end": "06:00" }, "at": "2026-11-17T05:59:00+05:30", "expect": true },
+    { "name": "no start: until the end time only", "slot": { "end": "06:00" }, "at": "2026-11-17T06:00:00+05:30", "expect": false },
+    { "name": "date range, both ends included", "slot": { "fromDate": "2026-11-17", "toDate": "2026-11-17" }, "at": "2026-11-17T00:00:00+05:30", "expect": true },
+
+    { "name": "hours: open on a weekday", "hours": { "days": [1, 2, 3, 4, 5, 6], "on": "10:00", "off": "18:00", "closedSaturdays": [2, 4] }, "at": "2026-11-17T10:00:00+05:30", "expect": true },
+    { "name": "hours: off at the off time", "hours": { "days": [1, 2, 3, 4, 5, 6], "on": "10:00", "off": "18:00", "closedSaturdays": [2, 4] }, "at": "2026-11-17T18:00:00+05:30", "expect": false },
+    { "name": "hours: 2nd Saturday closed", "hours": { "days": [1, 2, 3, 4, 5, 6], "on": "10:00", "off": "18:00", "closedSaturdays": [2, 4] }, "at": "2026-11-14T11:00:00+05:30", "expect": false },
+    { "name": "hours: 3rd Saturday open", "hours": { "days": [1, 2, 3, 4, 5, 6], "on": "10:00", "off": "18:00", "closedSaturdays": [2, 4] }, "at": "2026-11-21T11:00:00+05:30", "expect": true },
+    { "name": "hours: 4th Saturday closed", "hours": { "days": [1, 2, 3, 4, 5, 6], "on": "10:00", "off": "18:00", "closedSaturdays": [2, 4] }, "at": "2026-11-28T11:00:00+05:30", "expect": false },
+    { "name": "hours: Sunday not listed", "hours": { "days": [1, 2, 3, 4, 5, 6], "on": "10:00", "off": "18:00", "closedSaturdays": [2, 4] }, "at": "2026-11-15T11:00:00+05:30", "expect": false },
+    { "name": "night hours: Sunday 1 am belongs to the closed Saturday", "hours": { "days": [], "on": "20:00", "off": "06:00", "closedSaturdays": [2] }, "at": "2026-11-15T01:00:00+05:30", "expect": false },
+    { "name": "night hours: Sunday evening is on", "hours": { "days": [], "on": "20:00", "off": "06:00", "closedSaturdays": [2] }, "at": "2026-11-15T21:00:00+05:30", "expect": true },
+    { "name": "hours: same on and off time is on all day", "hours": { "days": [], "on": "18:00", "off": "18:00", "closedSaturdays": [] }, "at": "2026-11-17T03:00:00+05:30", "expect": true }
+  ]
+}

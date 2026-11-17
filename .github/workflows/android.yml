@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "apps/tv/**"
+      - "packages/shared/test-vectors/**"
       - ".github/workflows/android.yml"
   workflow_dispatch:
 

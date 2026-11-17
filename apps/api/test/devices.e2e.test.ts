@@ -188,6 +188,24 @@ describe('what a TV plays', () => {
     }
   });
 
+  it('orders overlapping timed playlists at one level: higher priority, then newer', async () => {
+    const make = async (name: string, priority: number, createdAt: string) => {
+      const p = await createPlaylist(t.prisma, name, [(await createMedia(t.prisma, name)).id]);
+      const a = await assign(t.prisma, p.id, 'BRANCH', places.matarBranch.id, [{ start: '00:00', end: '00:00' }]);
+      return t.prisma.assignment.update({ where: { id: a.id }, data: { priority, createdAt: new Date(createdAt) } });
+    };
+    const rows = [
+      await make('Older offer', 0, '2026-11-01T00:00:00Z'),
+      await make('Newer offer', 0, '2026-11-10T00:00:00Z'),
+      await make('Urgent offer', 5, '2026-10-01T00:00:00Z'),
+    ];
+    try {
+      assert.deepEqual(await playlistNames(matarTv), ['Urgent offer', 'Newer offer', 'Older offer', 'Everyone']);
+    } finally {
+      await t.prisma.assignment.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
+    }
+  });
+
   it('drops a schedule whose last day has passed', async () => {
     const old = await createPlaylist(t.prisma, 'Old campaign', [(await createMedia(t.prisma, 'Old')).id]);
     const a = await assign(t.prisma, old.id, 'BRANCH', places.matarBranch.id, [{ from: '2020-01-01', to: '2020-01-31' }]);
