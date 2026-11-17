@@ -166,6 +166,12 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     return { ok: true };
   }
 
+  /** The exact server time, answered at once: TVs use it to keep broadcasts in step with each other. */
+  @SubscribeMessage('time')
+  time() {
+    return { now: Date.now() };
+  }
+
   @SubscribeMessage('command:ack')
   commandAck(@ConnectedSocket() socket: Socket, @MessageBody() body: Partial<CommandAckPayload> | undefined) {
     const screenId = (socket.data as Partial<DeviceData>).screenId;

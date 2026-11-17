@@ -3,6 +3,8 @@ package `in`.kdcc.darpan
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.os.SystemClock
+import io.socket.client.Ack
 import io.socket.client.IO
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
@@ -53,7 +55,11 @@ class DeviceLink(
         val s = IO.socket(URI.create(serverUrl.trimEnd('/') + "/devices"), options)
 
         s.on(Socket.EVENT_CONNECT, Emitter.Listener {
-            main.post { sendHeartbeat() }
+            main.post {
+                sendHeartbeat()
+                // A few quick time checks right away, so broadcasts are in step from the start.
+                for (i in 0 until 3) main.postDelayed({ askTime() }, i * 1_500L)
+            }
         })
         s.on("manifest:updated", Emitter.Listener { args ->
             val version = (args.firstOrNull() as? JSONObject)?.optString("version") ?: ""
@@ -107,6 +113,22 @@ class DeviceLink(
             s.emit("heartbeat", listener.heartbeat())
         } catch (e: Exception) {
             Log.w(TAG, "heartbeat failed", e)
+        }
+        askTime()
+    }
+
+    /** Asks the server for its exact time, for [SyncClock]. Tiny, and answered at once. */
+    private fun askTime() {
+        val s = socket ?: return
+        if (!s.connected()) return
+        val sent = SystemClock.elapsedRealtime()
+        try {
+            s.emit("time", JSONObject(), Ack { args ->
+                val now = (args.firstOrNull() as? JSONObject)?.optLong("now", 0L) ?: 0L
+                if (now > 0) SyncClock.sample(now, sent, SystemClock.elapsedRealtime())
+            })
+        } catch (e: Exception) {
+            Log.w(TAG, "time check failed", e)
         }
     }
 

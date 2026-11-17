@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.abs
 
 /**
  * Shows a broadcast from head office on top of everything: a full-screen message, a poster or
@@ -131,6 +132,7 @@ class BroadcastPlayer(
                 onEnded()
                 return
             }
+            web?.evaluateJavascript("OFFSET=${SyncClock.now() - System.currentTimeMillis()}", null)
             if (status == "loading" && System.currentTimeMillis() - started > START_TIMEOUT_MS) {
                 setStatus("error: not started after ${START_TIMEOUT_MS / 1000} s (check this TV's internet)")
             }
@@ -290,21 +292,45 @@ class BroadcastPlayer(
         val uri = if (cache.has(item)) Uri.fromFile(cache.fileFor(item)) else Uri.parse(item.url)
         p.setMediaItem(MediaItem.fromUri(uri))
         p.repeatMode = Player.REPEAT_MODE_ONE
-        // Join at the same moment as every other screen, not from the start.
-        val startMs = b.startedAt?.let { parseTime(it) }
-        if (startMs != null) {
-            p.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state != Player.STATE_READY || p.duration <= 0) return
-                    p.removeListener(this)
-                    val at = (TrustedClock.now() - startMs).coerceAtLeast(0) % p.duration
-                    if (at > SYNC_SLACK_MS) p.seekTo(at)
-                }
-            })
-        }
         setStatus("loading")
         p.prepare()
         p.play()
+        // Every screen plays the moment it would be at had it started with the broadcast, and keeps to it.
+        val startMs = b.startedAt?.let { parseTime(it) } ?: return
+        scope.launch { keepInStep(b, p, startMs) }
+    }
+
+    /**
+     * Twice a second: how far is this screen from where every screen should be? A big gap is closed
+     * with a seek; a small one by playing a few percent faster or slower until it is gone, which
+     * nobody notices (a seek every time would stutter).
+     */
+    private suspend fun keepInStep(b: ManifestBroadcast, p: ExoPlayer, startMs: Long) {
+        var speed = 1f
+        var lastSeek = 0L
+        while (current == b && exo === p) {
+            delay(500)
+            val len = p.duration
+            if (!p.isPlaying || len <= 0) continue
+            val want = ((SyncClock.now() - startMs) % len + len) % len
+            var d = p.currentPosition - want
+            if (d > len / 2) d -= len else if (d < -len / 2) d += len // across the loop point
+            val t = System.currentTimeMillis()
+            if (t - lastSeek < 1_500) continue
+            val wanted = when {
+                abs(d) > SEEK_GAP_MS -> {
+                    lastSeek = t
+                    p.seekTo((want + SEEK_LEAD_MS) % len)
+                    1f
+                }
+                abs(d) > STEP_GAP_MS -> if (d < 0) 1.06f else 0.94f
+                else -> 1f
+            }
+            if (wanted != speed) {
+                speed = wanted
+                p.setPlaybackSpeed(wanted)
+            }
+        }
     }
 
     private fun playStream(box: FrameLayout, b: ManifestBroadcast, url: String) {
@@ -348,8 +374,8 @@ class BroadcastPlayer(
         web = w
         setStatus("loading")
         val startMs = b.startedAt?.let { parseTime(it) } ?: 0L
-        // The page's clock runs on the device clock; tell it how far that is from our trusted time.
-        val offsetMs = TrustedClock.now() - System.currentTimeMillis()
+        // The page's clock runs on the device clock; tell it how far that is from the server's.
+        val offsetMs = SyncClock.now() - System.currentTimeMillis()
         // The page's address is the app id: YouTube asks embedded players to say which app they are in.
         w.loadDataWithBaseURL("$ORIGIN/", youtubePage(videoId, b.muted, startMs, offsetMs), "text/html", "utf-8", null)
     }
@@ -372,47 +398,95 @@ class BroadcastPlayer(
         }
     }
 
+    /**
+     * YouTube's player inside a bare page. A black cover hides YouTube's own title and buttons while
+     * the video starts, loops or is paused (they show then even with controls off), and lifts once it
+     * plays steadily. Every half second the page checks where this screen is against where every
+     * screen should be: small gaps close by playing a touch faster or slower (not visible), big ones
+     * by a seek that aims ahead by how late this TV's seeks have been landing.
+     */
     private fun youtubePage(id: String, muted: Boolean, startMs: Long, offsetMs: Long): String = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:fixed;top:0;left:0;width:100%;height:100%;border:0;pointer-events:none}</style>
-        </head><body><div id="p"></div>
+        <style>
+          html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none}
+          #p{position:fixed;top:0;left:0;width:100%;height:100%;border:0;pointer-events:none}
+          #c{position:fixed;inset:0;background:#000;z-index:2;opacity:1;transition:opacity .5s}
+        </style>
+        </head><body><div id="p"></div><div id="c"></div>
         <script>
-        var MUTED = $muted, START = $startMs, OFFSET = $offsetMs, SLACK = 2;
+        var MUTED = $muted, START = $startMs, OFFSET = $offsetMs;
         var WHY = {2:'the link is not valid',5:'YouTube could not play it here',100:'the video was removed or is private',
                    101:'its owner does not allow playing it outside YouTube',150:'its owner does not allow playing it outside YouTube',
                    152:'YouTube refused this player',153:'YouTube refused this player'};
-        var player = null;
+        var player = null, cover = document.getElementById('c'), lift = null, played = false;
+        var rate = 1, lead = 0.6, lastSeek = 0, live = null;
         function now() { return Date.now() + OFFSET; }
+        function hide() { if (lift) { clearTimeout(lift); lift = null; } cover.style.opacity = '1'; }
+        function reveal(ms) {
+          if (lift || cover.style.opacity === '0') return;
+          lift = setTimeout(function () { lift = null; cover.style.opacity = '0'; }, ms);
+        }
+        function setRate(r) { if (rate !== r) { rate = r; try { player.setPlaybackRate(r); } catch (e) {} } }
         // A live stream: every screen just plays its live edge. A recorded video: every screen plays the
         // second it would be at if it had started with the broadcast, so they all show the same picture.
-        function isLive(p) {
-          try { var d = p.getVideoData(); if (d && typeof d.isLive === 'boolean') return d.isLive; } catch (e) {}
-          return !(p.getDuration() > 0);
+        function isLive() {
+          if (live !== null) return live;
+          try { var d = player.getVideoData(); if (d && typeof d.isLive === 'boolean') return (live = d.isLive); } catch (e) {}
+          return !(player.getDuration() > 0);
         }
-        function sync(p) {
-          if (!START || isLive(p)) return;
-          var len = p.getDuration();
+        function target(len) { return (((now() - START) / 1000) % len + len) % len; }
+        function step() {
+          if (!player || !player.getPlayerState) return;
+          var st = player.getPlayerState();
+          if (st === 2 || st === 5 || st === -1) { player.playVideo(); return; }
+          if (st !== 1 || !START || isLive()) { setRate(1); return; }
+          var len = player.getDuration();
           if (!(len > 0)) return;
-          var want = Math.max(0, (now() - START) / 1000) % len;
-          if (Math.abs(p.getCurrentTime() - want) > SLACK) p.seekTo(want, true);
+          var want = target(len), d = player.getCurrentTime() - want;
+          if (d > len / 2) d -= len; else if (d < -len / 2) d += len; // across the loop point
+          var t = Date.now();
+          if (t - lastSeek < 2500) return; // let the last seek settle before judging it
+          if (Math.abs(d) > 1) {
+            // Still off soon after a seek: this TV's seeks land late (or early) by about d; aim for that.
+            if (lastSeek && t - lastSeek < 12000) lead = Math.min(5, Math.max(0, lead - d));
+            lastSeek = t;
+            setRate(1);
+            player.seekTo((want + lead) % len, true);
+            return;
+          }
+          if (Math.abs(d) > 0.08) setRate(d < 0 ? 1.25 : 0.75);
+          else setRate(1);
         }
         function onYouTubeIframeAPIReady() {
           player = new YT.Player('p', {
             width: '100%', height: '100%', videoId: '$id',
-            playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1, mute: MUTED ? 1 : 0, loop: 1, playlist: '$id',
+            playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1, mute: MUTED ? 1 : 0,
                           iv_load_policy: 3, fs: 0, disablekb: 1, modestbranding: 1, cc_load_policy: 0, origin: '$ORIGIN' },
             events: {
               onReady: function (e) { if (!MUTED) { e.target.unMute(); e.target.setVolume(100); } e.target.playVideo(); },
               onStateChange: function (e) {
-                if (e.data === 1) { Darpan.status('playing'); sync(e.target); }
-                if (e.data === 3) Darpan.status('loading');
-                if (e.data === 2) e.target.playVideo(); // never stay paused
+                if (e.data === 1) {
+                  Darpan.status('playing');
+                  // The title YouTube shows when a video first starts fades out after about 3 s.
+                  reveal(played ? 700 : 3500);
+                  played = true;
+                } else if (e.data === 3) {
+                  if (!played) Darpan.status('loading');
+                } else if (e.data === 0) {
+                  // Loop ourselves: YouTube's own loop reloads the video and shows its title again.
+                  hide();
+                  var len = player.getDuration();
+                  player.seekTo(len > 0 && START && !isLive() ? target(len) : 0, true);
+                  player.playVideo();
+                } else if (e.data === 2) {
+                  hide(); // paused shows YouTube's buttons and suggestions: cover, and play on
+                  player.playVideo();
+                }
               },
-              onError: function (e) { Darpan.status('error: ' + (WHY[e.data] || ('YouTube error ' + e.data))); }
+              onError: function (e) { hide(); Darpan.status('error: ' + (WHY[e.data] || ('YouTube error ' + e.data))); }
             }
           });
-          // Screens drift apart over a long video (buffering); pull back into step now and then.
-          setInterval(function () { if (player && player.getPlayerState && player.getPlayerState() === 1) sync(player); }, 30000);
+          setInterval(step, 500);
         }
         </script>
         <script src="https://www.youtube.com/iframe_api" onerror="Darpan.status('error: cannot reach YouTube, check this TV internet')"></script>
@@ -430,8 +504,11 @@ class BroadcastPlayer(
         const val ORIGIN = "https://in.kdcc.darpan"
         const val START_TIMEOUT_MS = 60_000L
         const val RETRY_MS = 15_000L
-        /** Closer than this to where the other screens are: leave it, a seek would only stutter. */
-        const val SYNC_SLACK_MS = 2_000L
+        /** Further than this from the other screens: seek (aiming a little ahead, as a seek takes time). */
+        const val SEEK_GAP_MS = 1_000L
+        const val SEEK_LEAD_MS = 150L
+        /** Further than this: play slightly faster or slower until back in step. */
+        const val STEP_GAP_MS = 60L
         const val DESKTOP_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         val INK = Color.rgb(20, 25, 54)
         val HALDI = Color.rgb(224, 165, 38)

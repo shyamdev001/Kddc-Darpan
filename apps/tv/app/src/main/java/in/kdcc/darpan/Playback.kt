@@ -323,6 +323,14 @@ class Playback(
         player.setMediaItem(MediaItem.fromUri(Uri.fromFile(cache.fileFor(item))))
         player.prepare()
         videoView.visibility = View.VISIBLE
+        // A video narrower or shorter than the screen leaves bars; they must be black, never the
+        // last poster peeking out from underneath. Clearing the posters also frees their memory.
+        for (v in listOf(imageA, imageB)) {
+            v.animate().cancel()
+            v.alpha = 0f
+            v.setImageDrawable(null)
+        }
+        preloaded = null
         player.play()
         nowPlaying(item.mediaId)
         plays.start(item.mediaId)

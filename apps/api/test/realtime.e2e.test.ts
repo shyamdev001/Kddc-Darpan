@@ -96,6 +96,15 @@ describe('live dashboard updates', () => {
     assert.equal(await onlineInList(tv.deviceId), false);
   });
 
+  it('tells a TV the exact server time, so broadcasts stay in step across screens', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Clock TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const before = Date.now();
+    const reply = (await device.timeout(3_000).emitWithAck('time', {})) as { now: number };
+    assert.ok(reply.now >= before && reply.now <= Date.now(), 'server time is current');
+  });
+
   it('passes on what a TV reports playing (heartbeat)', async () => {
     const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Heartbeat TV');
     const device = tvSocket(tv.deviceToken);

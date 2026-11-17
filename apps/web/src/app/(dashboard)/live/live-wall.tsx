@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { LiveScreen, LiveWallResponse } from "@darpan/shared";
-import { MonitorOff, Radio, Search } from "lucide-react";
+import { MonitorOff, Play, Radio, Search } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { formatAgo } from "@/lib/format";
 import { useLiveStatus, useScreenUpdates } from "@/lib/live-updates";
@@ -209,19 +209,45 @@ function Picture({ screen: s }: { screen: LiveScreen }) {
       </div>
     );
   }
+  if (b?.youtubeId) {
+    return (
+      <>
+        {/* eslint-disable-next-line @next/next/no-img-element -- YouTube's own still of the video */}
+        <img src={`https://i.ytimg.com/vi/${encodeURIComponent(b.youtubeId)}/hqdefault.jpg`} alt="" className="h-full w-full object-cover" />
+        <Corner icon={Play}>YouTube</Corner>
+      </>
+    );
+  }
   if (b) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 bg-ink text-white">
         <Radio className="size-6 text-white/80" aria-hidden />
-        <p className="text-xs font-medium text-white/80">{b.youtubeId ? "YouTube" : "Live stream"}</p>
+        <p className="text-xs font-medium text-white/80">Live stream</p>
       </div>
     );
   }
-  if (s.nowPlaying) return <Thumb id={s.nowPlaying.id} />;
+  if (s.nowPlaying) {
+    return (
+      <>
+        <Thumb id={s.nowPlaying.id} />
+        {s.nowPlaying.type === "VIDEO" && <Corner icon={Play}>Video</Corner>}
+      </>
+    );
+  }
   return (
     <div className={cn("flex h-full items-center justify-center", !s.online && "opacity-60")}>
       <MonitorOff className="size-6 text-white/25" aria-hidden />
     </div>
+  );
+}
+
+/** A small label in the top-right corner of a tile (the bottom is kept for error notes). */
+function Corner({ icon: Icon, children }: { icon: typeof Play; children: React.ReactNode }) {
+  return (
+    <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">
+      <Icon className="size-3 fill-current" aria-hidden />
+      {children}
+    </span>
   );
 }
 
