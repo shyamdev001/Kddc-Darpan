@@ -8,6 +8,9 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
 
+/** Not enough free storage for a file; the message says how much is needed and free. */
+class NotEnoughSpaceException(message: String) : IOException(message)
+
 /**
  * Media files on the TV, named by their SHA-256. A file only gets its final name after its
  * checksum matches the manifest, so anything the player finds here has been verified.
@@ -30,9 +33,10 @@ class MediaCache(filesDir: File, private val http: OkHttpClient, private val pre
     @Throws(IOException::class)
     fun download(item: ManifestItem): Boolean {
         if (has(item)) return true
-        if (dir.usableSpace < item.size + RESERVE_BYTES) {
+        val free = dir.usableSpace
+        if (free < item.size + RESERVE_BYTES) {
             Log.w(TAG, "Not enough space for ${item.mediaId} (${item.size} bytes)")
-            return false
+            throw NotEnoughSpaceException("storage full: needs ${mb(item.size + RESERVE_BYTES)} MB, ${mb(free)} MB free")
         }
         val part = File(dir, item.sha256 + ".part")
         var have = if (part.exists()) part.length() else 0L
@@ -91,6 +95,8 @@ class MediaCache(filesDir: File, private val http: OkHttpClient, private val pre
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
+
+    private fun mb(bytes: Long) = (bytes + 1_048_575) / 1_048_576
 
     private companion object {
         const val TAG = "MediaCache"

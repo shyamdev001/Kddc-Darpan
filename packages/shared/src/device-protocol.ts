@@ -109,6 +109,11 @@ export interface HeartbeatPayload {
   broadcastStatus?: string | null;
   /** Android debugging (adb) switched on. Anyone on the branch network could then control the TV. */
   adbEnabled?: boolean;
+  /** Files of the newest manifest that are downloaded and verified, out of how many. */
+  filesReady?: number;
+  filesTotal?: number;
+  /** Why the last file failed ("storage full: needs 240 MB, 120 MB free"); null when all is well. */
+  downloadError?: string | null;
 }
 
 export type DeviceCommandType =

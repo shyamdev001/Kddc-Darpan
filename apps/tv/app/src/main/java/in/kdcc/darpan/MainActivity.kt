@@ -591,6 +591,14 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("kioskUntil", Kiosk.maintenanceEndsAt(this)?.let { iso(it) } ?: JSONObject.NULL)
             .put("broadcastId", broadcasts.currentId ?: JSONObject.NULL)
             .put("broadcastStatus", broadcasts.status ?: JSONObject.NULL)
+            .apply {
+                if (::downloader.isInitialized) {
+                    val files = downloader.summary
+                    put("filesReady", files.ready)
+                    put("filesTotal", files.total)
+                    put("downloadError", files.lastError ?: JSONObject.NULL)
+                }
+            }
     }
 
     // ---------- Screens ----------

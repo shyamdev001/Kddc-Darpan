@@ -8,6 +8,7 @@ import {
   type LiveWallResponse,
   type RegisterDeviceResponse,
   type ScreenDetail,
+  type ScreenFiles,
   type ScreenListResponse,
   type ScreenSummary,
 } from '@darpan/shared';
@@ -181,6 +182,9 @@ export class ScreensService {
         orientation: true,
         broadcastId: true,
         broadcastStatus: true,
+        filesReady: true,
+        filesTotal: true,
+        downloadError: true,
         branch: { select: { id: true, name: true, taluka: { select: { region: { select: { id: true, name: true } } } } } },
         currentMedia: { select: { id: true, displayName: true, type: true } },
       },
@@ -213,6 +217,7 @@ export class ScreensService {
           region: r.branch ? r.branch.taluka.region : null,
           nowPlaying: on && !cast ? r.currentMedia : null,
           broadcast: cast ? { ...cast, status: r.broadcastStatus } : null,
+          files: screenFiles(r),
         };
       }),
     };
@@ -252,6 +257,7 @@ export class ScreensService {
       kiosk: isKiosk(s.kioskState) ? s.kioskState : null,
       kioskUntil: s.kioskUntil?.toISOString() ?? null,
       adbEnabled: s.adbEnabled,
+      files: screenFiles(s),
       pairedAt: s.pairedAt?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
       ownPlaylistId: s.assignments[0]?.playlistId ?? null,
@@ -402,4 +408,8 @@ export class ScreensService {
 
 function isKiosk(v: string | null): v is KioskState {
   return v !== null && (KIOSK_STATES as readonly string[]).includes(v);
+}
+
+function screenFiles(s: { filesReady: number | null; filesTotal: number | null; downloadError: string | null }): ScreenFiles | null {
+  return s.filesReady === null || s.filesTotal === null ? null : { ready: s.filesReady, total: s.filesTotal, error: s.downloadError };
 }

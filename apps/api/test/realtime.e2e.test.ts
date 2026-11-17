@@ -2,7 +2,7 @@
 import './env';
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { DASHBOARD_NAMESPACE, DASHBOARD_SOCKET_PATH, DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, SCREENS_CHANGED_EVENT, type ScreensChangedPayload } from '@darpan/shared';
+import { DASHBOARD_NAMESPACE, DASHBOARD_SOCKET_PATH, DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, filesProblem, SCREENS_CHANGED_EVENT, type ScreensChangedPayload } from '@darpan/shared';
 import { io, type Socket } from 'socket.io-client';
 import { call, createPlaces, createUser, login, pairedTv, resetDb, startApp, type TestApp } from './helpers';
 
@@ -153,5 +153,29 @@ describe('Android debugging (adb) warning', () => {
     assert.equal(await adb(), false);
     await device.timeout(3_000).emitWithAck('heartbeat', base); // an older app: keeps the last answer
     assert.equal(await adb(), false);
+  });
+});
+
+describe('download problems reach head office', () => {
+  it('"3 of 12 files missing: storage full" shows on the screen page and the Live wall', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Full TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    const detail = async () => (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body.files;
+    const tile = async () => ((await call(t.base, 'GET', '/screens/live', { cookie: admin })).body.items as { id: string; files: unknown }[]).find((s) => s.id === tv.deviceId)?.files;
+
+    assert.equal(await detail(), null, 'unknown until the TV says');
+    const error = 'storage full: needs 240 MB, 120 MB free';
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, filesReady: 9, filesTotal: 12, downloadError: error });
+    assert.deepEqual(await detail(), { ready: 9, total: 12, error });
+    assert.deepEqual(await tile(), { ready: 9, total: 12, error });
+    assert.equal(filesProblem(await detail()), `3 of 12 files missing: ${error}`);
+
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, filesReady: 12, filesTotal: 12, downloadError: null });
+    assert.equal(filesProblem(await detail()), null);
+    // Nonsense is ignored, the last good report stays.
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, filesReady: 13, filesTotal: 12 });
+    assert.deepEqual(await detail(), { ready: 12, total: 12, error: null });
   });
 });

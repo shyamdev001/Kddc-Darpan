@@ -95,4 +95,42 @@ class DownloaderTest {
         assertTrue(authLost.await(5, TimeUnit.SECONDS))
         assertTrue(cleanups.isEmpty())
     }
+
+    @Test
+    fun theSummary_saysHowManyFilesAreMissingAndWhy() {
+        stored += "poster-a"
+        val d = downloader { item ->
+            when (item.sha256) {
+                "big-video" -> throw NotEnoughSpaceException("storage full: needs 240 MB, 120 MB free")
+                else -> true
+            }
+        }
+        d.want(Manifest(version = "1", items = listOf(item("poster-a"), item("big-video"), item("poster-b"))))
+        assertTrue(done.await(5, TimeUnit.SECONDS))
+        assertEquals(DownloadSummary(ready = 2, total = 3, lastError = "storage full: needs 240 MB, 120 MB free"), d.summary)
+        assertEquals(1, d.summary.missing)
+    }
+
+    @Test
+    fun whenEverythingArrives_theErrorClears() {
+        var failOnce = true
+        val d = downloader { item ->
+            if (item.sha256 == "poster-b" && failOnce) {
+                failOnce = false
+                throw java.net.SocketTimeoutException("timeout")
+            }
+            true
+        }
+        d.want(Manifest(version = "1", items = listOf(item("poster-a"), item("poster-b"))))
+        assertTrue(done.await(5, TimeUnit.SECONDS))
+        assertEquals(DownloadSummary(ready = 2, total = 2, lastError = null), d.summary)
+    }
+
+    @Test
+    fun failures_areDescribedInPlainWords() {
+        assertEquals("checksum did not match (file damaged on the way)", describeDownloadFailure(null))
+        assertEquals("server answered 404", describeDownloadFailure(ApiException(404, "Not found")))
+        assertEquals("network too slow (timed out)", describeDownloadFailure(java.net.SocketTimeoutException()))
+        assertEquals("storage full: needs 1 MB, 0 MB free", describeDownloadFailure(NotEnoughSpaceException("storage full: needs 1 MB, 0 MB free")))
+    }
 }

@@ -142,6 +142,9 @@ model Screen {
   testUpdates     Boolean   @default(false) // gets app releases in the TEST stage
   kioskUntil      DateTime? // maintenance ends
   adbEnabled      Boolean? // Android debugging on, from the heartbeat; null = app too old to say
+  filesReady      Int? // newest manifest's files downloaded and verified on the TV
+  filesTotal      Int?
+  downloadError   String? // why the last file failed, in plain words
   broadcastId     String?   @db.Uuid // the broadcast the TV says it is showing (no FK: it may be deleted)
   broadcastStatus String? // playing | loading | error: ..., from the heartbeat
   lastSeenAt      DateTime?

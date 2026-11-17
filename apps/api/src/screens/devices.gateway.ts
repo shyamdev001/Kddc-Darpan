@@ -24,6 +24,7 @@ interface DeviceData {
 
 const room = (screenId: string) => `screen:${screenId}`;
 const mb = (bytes: unknown) => (typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0 ? Math.round(bytes / 1_048_576) : undefined);
+const count = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 100_000 ? v : undefined);
 const shortText = (v: unknown, max: number) => (typeof v === 'string' && v.length <= max ? v : undefined);
 
 /** Manifests built at the same time when pushing a change. */
@@ -158,6 +159,10 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
             }
           : {}),
         ...(typeof body.adbEnabled === 'boolean' ? { adbEnabled: body.adbEnabled } : {}),
+        // Older app versions send no download summary: leave what we had.
+        ...(count(body.filesReady) !== undefined && count(body.filesTotal) !== undefined && body.filesReady! <= body.filesTotal!
+          ? { filesReady: body.filesReady, filesTotal: body.filesTotal, downloadError: shortText(body.downloadError, 200) ?? null }
+          : {}),
         // Older app versions send no kiosk fields: leave what we had.
         ...(typeof body.kiosk === 'string' && (KIOSK_STATES as readonly string[]).includes(body.kiosk)
           ? { kioskState: body.kiosk, kioskUntil: kioskUntil(body.kiosk, body.kioskUntil) }

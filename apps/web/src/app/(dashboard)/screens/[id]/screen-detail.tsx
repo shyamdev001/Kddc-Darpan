@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import type { BranchOption, Orientation, PlaylistSummary, ScreenDetail, UpdateScreenRequest } from "@darpan/shared";
+import { filesProblem, type BranchOption, type Orientation, type PlaylistSummary, type ScreenDetail, type UpdateScreenRequest } from "@darpan/shared";
 import { ChevronLeft, Loader2, Trash2 } from "lucide-react";
 import {
   AlertDialog,
@@ -321,6 +321,7 @@ function DeviceCard({ screen, ago, canEdit }: { screen: ScreenDetail; ago: strin
     ["Resolution", screen.resolution],
     ["Network address", screen.ipAddress],
     ["Storage", mb(screen.storageFreeMb, screen.storageTotalMb)],
+    ["Ad files", screen.files ? `${screen.files.ready} of ${screen.files.total} on the TV` : null],
     ["Memory", mb(screen.ramFreeMb, screen.ramTotalMb)],
     ["Paired on", screen.pairedAt ? formatDay(screen.pairedAt) : null],
   ];
@@ -346,6 +347,14 @@ function DeviceCard({ screen, ago, canEdit }: { screen: ScreenDetail; ago: strin
         <p className="border-b px-4 py-2.5 text-sm text-muted-foreground sm:px-5">
           {screen.online && screen.nowPlaying ? `Showing ${screen.nowPlaying.displayName}` : screen.online ? "Connected; it has not reported what is on screen yet" : "Not connected right now"}
         </p>
+        {filesProblem(screen.files) && (
+          <p role="status" className="border-b bg-haldi/15 px-4 py-2.5 text-sm text-[#6b4a00] sm:px-5">
+            <span className="font-medium">{filesProblem(screen.files)}.</span>{" "}
+            {screen.files?.error?.startsWith("storage full")
+              ? "The TV keeps playing what it has. Make room: take big videos out of its playlists, or uninstall other apps on the TV."
+              : "The TV keeps playing what it has and tries again on the next update."}
+          </p>
+        )}
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-4 py-4 text-sm sm:px-5">
           {facts.map(([label, value]) => (
             <div key={label} className="contents">

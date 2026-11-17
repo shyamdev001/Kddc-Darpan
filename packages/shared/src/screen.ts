@@ -17,6 +17,23 @@ export interface BranchRef {
   code: string | null;
 }
 
+/** The TV's downloads, as last reported; null for app versions that do not report them. */
+export interface ScreenFiles {
+  ready: number;
+  total: number;
+  /** Why the last file failed, in plain words; null when nothing failed. */
+  error: string | null;
+}
+
+/** "3 of 12 files missing: storage full", or null when nothing is missing. */
+export function filesProblem(files: ScreenFiles | null): string | null {
+  if (!files) return null;
+  const missing = files.total - files.ready;
+  if (missing <= 0) return null;
+  const what = `${missing} of ${files.total} file${files.total === 1 ? '' : 's'} missing`;
+  return files.error ? `${what}: ${files.error}` : `${what} (still downloading)`;
+}
+
 // ---- Live wall: what every screen shows right now ----
 
 /** One tile on the Live wall. TVs report each new item as it comes on, so this is seconds old. */
@@ -41,6 +58,7 @@ export interface LiveScreen {
     /** "playing", "loading" or "error: ..." as the TV reports it. */
     status: string | null;
   } | null;
+  files: ScreenFiles | null;
 }
 
 export interface LiveWallResponse {
@@ -94,6 +112,7 @@ export interface ScreenDetail extends ScreenSummary {
   kioskUntil: string | null;
   /** Android debugging (adb) is on, as the TV last reported; null for app versions that do not report it. */
   adbEnabled: boolean | null;
+  files: ScreenFiles | null;
   pairedAt: string | null;
   createdAt: string;
   /** playlist set directly on this screen (null = inherits from branch/taluka/region/all) */

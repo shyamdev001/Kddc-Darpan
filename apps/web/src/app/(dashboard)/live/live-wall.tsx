@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { LiveScreen, LiveWallResponse } from "@darpan/shared";
+import { filesProblem, type LiveScreen, type LiveWallResponse } from "@darpan/shared";
 import { MonitorOff, Play, Radio, Search } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { formatAgo } from "@/lib/format";
@@ -163,6 +163,11 @@ function Tile({ screen: s, now }: { screen: LiveScreen; now: number }) {
           <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded bg-[#c41e3a] px-1.5 py-0.5 text-[11px] font-semibold text-white">
             <Radio className="size-3" aria-hidden />
             Broadcast
+          </span>
+        )}
+        {s.online && !s.broadcast?.status?.startsWith("error") && filesProblem(s.files) && (
+          <span className="absolute inset-x-0 bottom-0 truncate bg-black/75 px-2 py-1 text-[11px] text-white" title={filesProblem(s.files) ?? undefined}>
+            {filesProblem(s.files)}
           </span>
         )}
         {s.broadcast?.status?.startsWith("error") && (
