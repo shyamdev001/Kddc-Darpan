@@ -351,7 +351,7 @@ export class ScreensService {
     const s = await this.detail(id, user);
     await this.commands.deleteScreenshots(id);
     await this.prisma.screen.delete({ where: { id } });
-    this.gateway.disconnectScreen(id);
+    this.gateway.removeScreen(id);
     await this.audit.log({
       userId: user.id,
       action: 'screen.remove',

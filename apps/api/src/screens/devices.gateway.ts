@@ -10,7 +10,7 @@ import {
   type OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { SkipThrottle } from '@nestjs/throttler';
-import { DEVICE_NAMESPACE, KIOSK_STATES, type CommandAckPayload, type DeviceCommandPayload, type HeartbeatPayload } from '@darpan/shared';
+import { DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, KIOSK_STATES, type CommandAckPayload, type DeviceCommandPayload, type HeartbeatPayload } from '@darpan/shared';
 import { bufferTime, filter, Subject, type Subscription } from 'rxjs';
 import type { Namespace, Socket } from 'socket.io';
 import { ContentEvents } from '../events/content-events';
@@ -192,9 +192,16 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     return true;
   }
 
-  /** Forcibly disconnect a TV (it was removed from the dashboard). */
+  /** Forcibly disconnect a TV (its token stopped working). */
   disconnectScreen(screenId: string) {
     this.ns.in(room(screenId)).disconnectSockets(true);
+  }
+
+  /** Head office removed the screen: tell the TV to stop and forget its content, then disconnect it. */
+  removeScreen(screenId: string) {
+    this.ns.to(room(screenId)).emit(DEVICE_REMOVED_EVENT);
+    // A moment for the message to leave before the connection closes.
+    setTimeout(() => this.disconnectScreen(screenId), 1_000).unref();
   }
 
   /** Tells each connected TV (or just `screenIds`) its current manifest version. */

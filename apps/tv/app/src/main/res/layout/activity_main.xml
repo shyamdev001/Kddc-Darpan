@@ -232,4 +232,20 @@
             android:textColor="@color/haldi"
             android:textSize="16sp" />
     </LinearLayout>
+
+    <!-- The server refused this TV's key: the ads keep playing, and the new pairing code shows here. -->
+    <TextView
+        android:id="@+id/repairBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="24dp"
+        android:background="@color/ink"
+        android:paddingStart="16dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="10dp"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:visibility="gone" />
 </FrameLayout>

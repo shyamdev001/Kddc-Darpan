@@ -32,8 +32,9 @@ class Api(private val prefs: Prefs) {
         json.decodeFromString(RegisterResponse.serializer(), call(req))
     }
 
-    suspend fun status(): DeviceStatus = withContext(Dispatchers.IO) {
-        json.decodeFromString(DeviceStatus.serializer(), call(authed("/api/devices/status")))
+    /** Pairing state; `token` defaults to the TV's own key (a waiting new key can be checked too). */
+    suspend fun status(token: String? = prefs.deviceToken): DeviceStatus = withContext(Dispatchers.IO) {
+        json.decodeFromString(DeviceStatus.serializer(), call(authed("/api/devices/status", token)))
     }
 
     /** Raw JSON, so exactly what the server sent can be saved for offline use. */
@@ -72,8 +73,8 @@ class Api(private val prefs: Prefs) {
         }
     }
 
-    private fun authed(path: String): Request =
-        Request.Builder().url(url(path)).header("Authorization", "Bearer ${prefs.deviceToken ?: ""}").build()
+    private fun authed(path: String, token: String? = prefs.deviceToken): Request =
+        Request.Builder().url(url(path)).header("Authorization", "Bearer ${token ?: ""}").build()
 
     private fun call(req: Request): String {
         http.newCall(req).execute().use { res ->

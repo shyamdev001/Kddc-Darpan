@@ -26,8 +26,10 @@ class DeviceLink(
         fun onManifestUpdated(version: String)
         /** A remote command; reply with [sendAck] (a screenshot replies by uploading). */
         fun onCommand(commandId: String, type: String)
-        /** The server no longer knows this token (screen removed or TV re-registered elsewhere). */
+        /** The server refused this token. May be temporary: keep playing (see [Repairer]). */
         fun onUnauthorized()
+        /** Head office removed this screen: stop and forget the content. */
+        fun onRemoved()
         /** The server closed the connection on purpose; check whether we are still allowed in. */
         fun onServerDisconnect()
         fun heartbeat(): JSONObject
@@ -64,6 +66,9 @@ class DeviceLink(
         s.on("manifest:updated", Emitter.Listener { args ->
             val version = (args.firstOrNull() as? JSONObject)?.optString("version") ?: ""
             main.post { if (!closed) listener.onManifestUpdated(version) }
+        })
+        s.on("device:removed", Emitter.Listener {
+            main.post { if (!closed) listener.onRemoved() }
         })
         s.on("command", Emitter.Listener { args ->
             val data = args.firstOrNull() as? JSONObject

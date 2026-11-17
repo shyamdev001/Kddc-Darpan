@@ -5,6 +5,7 @@
     <string name="pair_title">Pair this screen</string>
     <string name="pair_hint">On the KDCC Darpan dashboard, open Screens, choose Pair a screen, and enter this code.</string>
     <string name="pair_waiting">Getting a code…</string>
+    <string name="repair_badge">Head office: pair this screen again with code %1$s</string>
     <string name="change_server">Change server</string>
     <string name="setup_title">Connect to the Darpan server</string>
     <string name="setup_hint">Type the address of the Darpan server, for example http://10.0.0.5:4000</string>

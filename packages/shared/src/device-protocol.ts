@@ -125,9 +125,17 @@ export interface DeviceCommandPayload {
   params?: Record<string, unknown>;
 }
 
+/**
+ * Sent when head office removes the screen. The only signal that makes a TV stop playing and
+ * forget its content: a refused key alone (401) may be temporary (a restored database, a wrong
+ * answer for a moment), so then the TV keeps playing and offers a new pairing code in a corner.
+ */
+export const DEVICE_REMOVED_EVENT = 'device:removed';
+
 export interface ServerToDeviceEvents {
   'manifest:updated': (data: { version: string }) => void;
   command: (data: DeviceCommandPayload) => void;
+  'device:removed': () => void;
 }
 
 /** TV -> server once a command is done (a screenshot is acknowledged by its upload instead). */

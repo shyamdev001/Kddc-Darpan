@@ -69,10 +69,12 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var serverInput: EditText
     private lateinit var connectButton: Button
     private lateinit var setupMessage: TextView
+    private lateinit var repairBadge: TextView
 
     private var flow: Job? = null
     private var periodic: Job? = null
     private var playUploads: Job? = null
+    private var repair: Job? = null
     private var link: DeviceLink? = null
     private var manifestVersion: String? = null
     private var brightness: Int? = null // percent from the display hours; null = the TV's own
@@ -93,6 +95,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         serverInput = findViewById(R.id.serverInput)
         connectButton = findViewById(R.id.connectButton)
         setupMessage = findViewById(R.id.setupMessage)
+        repairBadge = findViewById(R.id.repairBadge)
 
         prefs = Prefs(this)
         api = Api(prefs)
@@ -267,15 +270,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         while (scope.isActive) {
             try {
                 if (prefs.deviceToken == null) {
-                    val r = api.register(
-                        RegisterRequest(
-                            hardwareId = prefs.hardwareId(),
-                            model = "${Build.MANUFACTURER} ${Build.MODEL}".take(120),
-                            osVersion = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})".take(60),
-                            resolution = resolution(),
-                            appVersion = BuildConfig.VERSION_NAME,
-                        ),
-                    )
+                    val r = api.register(registerRequest())
                     prefs.saveDevice(r.deviceId, r.deviceToken)
                     showPairing(r.pairingCode, null)
                 }
@@ -354,7 +349,18 @@ class MainActivity : Activity(), DeviceLink.Listener {
         }
     }
 
+    private fun registerRequest() = RegisterRequest(
+        hardwareId = prefs.hardwareId(),
+        model = "${Build.MANUFACTURER} ${Build.MODEL}".take(120),
+        osVersion = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})".take(60),
+        resolution = resolution(),
+        appVersion = BuildConfig.VERSION_NAME,
+    )
+
     private fun stopLive() {
+        repair?.cancel()
+        repair = null
+        showRepairCode(null)
         link?.close()
         link = null
         periodic?.cancel()
@@ -386,11 +392,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             throw e
         } catch (e: ApiException) {
             when (e.code) {
-                401 -> onUnauthorized()
-                403 -> { // server says not paired (TV was reset elsewhere): show a code again
-                    prefs.paired = false
-                    begin()
-                }
+                401, 403 -> onUnauthorized() // keeps playing; see onUnauthorized
                 else -> Log.w(TAG, "Sync failed (${e.code}); still playing the last content")
             }
         } catch (e: Exception) {
@@ -501,14 +503,60 @@ class MainActivity : Activity(), DeviceLink.Listener {
         }
     }
 
+    /**
+     * The server refused this TV's key. That alone is not proof the screen was removed (a restored
+     * server, a wrong answer for a moment), so the ads keep playing and a new pairing code appears
+     * in a corner until head office enters it, or until the old key works again.
+     */
     override fun onUnauthorized() {
-        // Removed from the dashboard: stop showing content and ask to be paired again.
+        if (!prefs.paired) {
+            // Never had content: the normal full-screen pairing.
+            prefs.clearDevice()
+            begin()
+            return
+        }
+        if (repair?.isActive == true) return
+        link?.close() // stop the live connection retrying with a refused key
+        link = null
+        val repairer = Repairer(
+            oldKeyWorks = {
+                try {
+                    api.status().paired
+                } catch (e: ApiException) {
+                    if (e.code == 401 || e.code == 403) false else throw e
+                }
+            },
+            register = { api.register(registerRequest()) },
+            statusWith = { token -> api.status(token) },
+            pendingToken = { prefs.pendingToken },
+            savePending = { r -> prefs.savePending(r.deviceId, r.deviceToken) },
+            dropPending = { prefs.clearPending() },
+            showCode = { code -> showRepairCode(code) },
+        )
+        repair = scope.launch {
+            if (repairer.run() == Repairer.Outcome.NEW_KEY_PAIRED) prefs.promotePending()
+            goLive() // reconnects with whichever key works now
+        }
+    }
+
+    /** Head office removed this screen: stop showing content and ask to be paired again. */
+    override fun onRemoved() {
         stopLive()
+        broadcasts.stop()
         playback.stop()
         store.clear()
         manifestVersion = null
         prefs.clearDevice()
         begin()
+    }
+
+    private fun showRepairCode(code: String?) {
+        if (code == null) {
+            repairBadge.visibility = View.GONE
+        } else {
+            repairBadge.text = getString(R.string.repair_badge, "${code.take(3)} ${code.drop(3)}")
+            repairBadge.visibility = View.VISIBLE
+        }
     }
 
     override fun onServerDisconnect() {

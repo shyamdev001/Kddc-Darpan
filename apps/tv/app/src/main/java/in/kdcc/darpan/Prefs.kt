@@ -30,7 +30,26 @@ class Prefs(private val context: Context) {
     }
 
     fun clearDevice() {
-        p.edit().remove(KEY_DEVICE).remove(KEY_TOKEN).remove(KEY_PAIRED).commit()
+        p.edit().remove(KEY_DEVICE).remove(KEY_TOKEN).remove(KEY_PAIRED).remove(KEY_PENDING_DEVICE).remove(KEY_PENDING_TOKEN).commit()
+    }
+
+    /** A new key waiting for head office to enter its code, while the old (refused) key is kept. */
+    val pendingToken: String? get() = p.getString(KEY_PENDING_TOKEN, null)
+
+    fun savePending(deviceId: String, token: String) {
+        p.edit().putString(KEY_PENDING_DEVICE, deviceId).putString(KEY_PENDING_TOKEN, token).commit()
+    }
+
+    fun clearPending() {
+        p.edit().remove(KEY_PENDING_DEVICE).remove(KEY_PENDING_TOKEN).commit()
+    }
+
+    /** Head office entered the new code: the new key becomes this TV's key. */
+    fun promotePending() {
+        val id = p.getString(KEY_PENDING_DEVICE, null) ?: return
+        val token = p.getString(KEY_PENDING_TOKEN, null) ?: return
+        p.edit().putString(KEY_DEVICE, id).putString(KEY_TOKEN, token).putBoolean(KEY_PAIRED, true)
+            .remove(KEY_PENDING_DEVICE).remove(KEY_PENDING_TOKEN).commit()
     }
 
     /**
@@ -53,6 +72,8 @@ class Prefs(private val context: Context) {
         const val KEY_DEVICE = "deviceId"
         const val KEY_TOKEN = "deviceToken"
         const val KEY_PAIRED = "paired"
+        const val KEY_PENDING_DEVICE = "pendingDeviceId"
+        const val KEY_PENDING_TOKEN = "pendingDeviceToken"
         const val KEY_FALLBACK_ID = "fallbackHardwareId"
         const val BROKEN_ANDROID_ID = "9774d56d682e549c" // shared by many old devices
     }

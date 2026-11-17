@@ -2,7 +2,7 @@
 import './env';
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { DASHBOARD_NAMESPACE, DASHBOARD_SOCKET_PATH, DEVICE_NAMESPACE, SCREENS_CHANGED_EVENT, type ScreensChangedPayload } from '@darpan/shared';
+import { DASHBOARD_NAMESPACE, DASHBOARD_SOCKET_PATH, DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, SCREENS_CHANGED_EVENT, type ScreensChangedPayload } from '@darpan/shared';
 import { io, type Socket } from 'socket.io-client';
 import { call, createPlaces, createUser, login, pairedTv, resetDb, startApp, type TestApp } from './helpers';
 
@@ -115,5 +115,25 @@ describe('live dashboard updates', () => {
     const update = updateFor(dash, tv.deviceId);
     device.emit('heartbeat', { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' });
     await update;
+  });
+});
+
+describe('a TV removed by head office', () => {
+  it('is told it was removed, so it stops and shows a new code (a refused key alone does not stop it)', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Removed TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const removed = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no removed event')), 5_000);
+      device.once(DEVICE_REMOVED_EVENT, () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+    const gone = new Promise<void>((resolve) => device.once('disconnect', () => resolve()));
+    const res = await call(t.base, 'DELETE', `/screens/${tv.deviceId}`, { cookie: admin });
+    assert.equal(res.status, 204);
+    await removed;
+    await gone;
   });
 });
