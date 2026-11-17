@@ -105,6 +105,7 @@ export class MediaService implements OnModuleInit, OnModuleDestroy {
       updatedAt: m.updatedAt.toISOString(),
       thumbUrl: m.thumbKey ? `/api/media/${m.id}/thumbnail?v=${v}` : null,
       fileUrl: m.storageKey ? `/api/media/${m.id}/file?v=${v}` : null,
+      defaultSlide: m.defaultSlide,
     };
   }
 
@@ -234,15 +235,26 @@ export class MediaService implements OnModuleInit, OnModuleDestroy {
     const end = data.endDate !== undefined ? (data.endDate as Date | null) : before.endDate;
     if (start && end && end <= start) throw new BadRequestException('The end date must be after the start date.');
 
-    const media = await this.prisma.media.update({ where: { id }, data, include: mediaInclude });
+    if (dto.defaultSlide !== undefined) {
+      if (dto.defaultSlide && (before.type !== 'IMAGE' || before.status !== 'READY')) {
+        throw new BadRequestException('Only a poster that has finished processing can be the default slide.');
+      }
+      data.defaultSlide = dto.defaultSlide;
+    }
+
+    const media = await this.prisma.$transaction(async (tx) => {
+      // Only one default slide: choosing a new one replaces the old.
+      if (dto.defaultSlide) await tx.media.updateMany({ where: { defaultSlide: true, NOT: { id } }, data: { defaultSlide: false } });
+      return tx.media.update({ where: { id }, data, include: mediaInclude });
+    });
     await this.audit.log({
       userId: user.id,
       action: 'media.update',
       entityType: 'Media',
       entityId: id,
       details: {
-        before: { displayName: before.displayName, startDate: before.startDate, endDate: before.endDate, tags: before.tags },
-        after: { displayName: media.displayName, startDate: media.startDate, endDate: media.endDate, tags: media.tags },
+        before: { displayName: before.displayName, startDate: before.startDate, endDate: before.endDate, tags: before.tags, defaultSlide: before.defaultSlide },
+        after: { displayName: media.displayName, startDate: media.startDate, endDate: media.endDate, tags: media.tags, defaultSlide: media.defaultSlide },
       } as unknown as Prisma.InputJsonValue,
       ipAddress: ip,
     });

@@ -404,6 +404,43 @@ describe('broadcasts', () => {
   });
 });
 
+describe('the default slide', () => {
+  it('goes to every TV first, ignores its dates, and there is only ever one', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Default slide TV');
+    const first = await createMedia(t.prisma, 'Bank poster');
+    const second = await createMedia(t.prisma, 'New bank poster');
+    const set = (id: string, on: boolean) => call(t.base, 'PATCH', `/media/${id}`, { cookie: admin, body: { defaultSlide: on } });
+
+    assert.equal((await set(first.id, true)).status, 200);
+    let m = (await manifest(tv)).body;
+    assert.equal(m.fallbackMediaId, first.id);
+    assert.equal(m.items[0].mediaId, first.id, 'downloaded before anything else');
+    assert.equal(m.items[0].validUntil, null);
+
+    // Choosing another replaces it.
+    const res = await set(second.id, true);
+    assert.equal(res.body.defaultSlide, true);
+    assert.equal((await t.prisma.media.findUniqueOrThrow({ where: { id: first.id } })).defaultSlide, false);
+    m = (await manifest(tv)).body;
+    assert.equal(m.fallbackMediaId, second.id);
+    assert.equal(await t.prisma.auditLog.count({ where: { action: 'media.update', entityId: second.id } }), 1);
+
+    // Turned off: TVs fall back to their built-in slide.
+    await set(second.id, false);
+    m = (await manifest(tv)).body;
+    assert.equal(m.fallbackMediaId, null);
+  });
+
+  it('must be a poster that is ready', async () => {
+    const video = await createMedia(t.prisma, 'Clip', { type: 'VIDEO', durationSec: 12 });
+    const pending = await createMedia(t.prisma, 'Still processing', { status: 'PROCESSING' });
+    for (const id of [video.id, pending.id]) {
+      const res = await call(t.base, 'PATCH', `/media/${id}`, { cookie: admin, body: { defaultSlide: true } });
+      assert.equal(res.status, 400);
+    }
+  });
+});
+
 describe('replacing a TV after a factory reset or a swap', () => {
   it('moves the new TV onto the old screen: same name, branch, playlist and history', async () => {
     const old = await pairedTv(t.base, admin, places.matarBranch.id, 'Nadiad hall');

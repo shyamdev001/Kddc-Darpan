@@ -97,6 +97,8 @@ data class Manifest(
     val app: ManifestApp? = null,
     /** Shown instead of the playlists until it ends. */
     val broadcast: ManifestBroadcast? = null,
+    /** The default slide (one of [items]): shown whenever nothing else can play. Its dates are ignored. */
+    val fallbackMediaId: String? = null,
 )
 
 /** An urgent message, poster or video, or live stream from head office. */

@@ -116,13 +116,30 @@ export class ManifestService implements OnModuleDestroy {
       });
     }
 
-    const items = [...media.values()];
+    // The default slide comes first, so a new TV downloads it before anything else.
+    const fallback = await this.prisma.media.findFirst({
+      where: { defaultSlide: true, status: 'READY', type: 'IMAGE', storageKey: { not: null }, sha256: { not: null } },
+    });
+    const fallbackItem: ManifestItem | null = fallback
+      ? (media.get(fallback.id) ?? {
+          mediaId: fallback.id,
+          url: `${publicBase()}/api/devices/media/${fallback.id}`,
+          sha256: fallback.sha256!,
+          size: Number(fallback.sizeBytes ?? 0),
+          type: fallback.type,
+          durationSec: 10,
+          validFrom: null,
+          validUntil: null,
+        })
+      : null;
+    const items = fallbackItem ? [fallbackItem, ...[...media.values()].filter((i) => i.mediaId !== fallbackItem.mediaId)] : [...media.values()];
+    const fallbackMediaId = fallbackItem?.mediaId ?? null;
     const settings: ManifestSettings = { orientation: screen.orientation, hours: hours?.hours ?? null };
     const app = await this.appOffer(screen.testUpdates);
     const broadcast = toManifestBroadcast(broadcasts.get(screen.id) ?? null);
     // The version only changes when what the TV must do changes, so it can skip identical manifests.
-    const version = createHash('sha256').update(JSON.stringify({ items, playlists, settings, app, broadcast })).digest('hex').slice(0, 16);
-    return { version, generatedAt: now.toISOString(), items, playlists, settings, app, broadcast };
+    const version = createHash('sha256').update(JSON.stringify({ items, playlists, settings, app, broadcast, fallbackMediaId })).digest('hex').slice(0, 16);
+    return { version, generatedAt: now.toISOString(), items, playlists, settings, app, broadcast, fallbackMediaId };
   }
 
   /** The newest app build offered to this screen: released to all, or in test and this is a test screen. */

@@ -43,12 +43,18 @@ function MediaDialogBody({ media, onClose, onChanged }: Omit<DialogProps, "item"
   const [name, setName] = useState(media.displayName);
   const [start, setStart] = useState(toDateInput(media.startDate));
   const [end, setEnd] = useState(toDateInput(media.endDate));
+  const [defaultSlide, setDefaultSlide] = useState(media.defaultSlide);
+  const canBeDefault = media.type === "IMAGE" && media.status === "READY";
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const dirty = name.trim() !== media.displayName || start !== toDateInput(media.startDate) || end !== toDateInput(media.endDate);
+  const dirty =
+    name.trim() !== media.displayName ||
+    start !== toDateInput(media.startDate) ||
+    end !== toDateInput(media.endDate) ||
+    defaultSlide !== media.defaultSlide;
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -62,6 +68,7 @@ function MediaDialogBody({ media, onClose, onChanged }: Omit<DialogProps, "item"
       displayName: name.trim(),
       startDate: fromDateInput(start, "start"),
       endDate: fromDateInput(end, "end"),
+      ...(defaultSlide !== media.defaultSlide ? { defaultSlide } : {}),
     };
     try {
       await api(`/api/media/${media.id}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -166,6 +173,26 @@ function MediaDialogBody({ media, onClose, onChanged }: Omit<DialogProps, "item"
                 </div>
                 <p className="text-sm text-muted-foreground">Leave blank to show it with no limit. Screens stop showing it after the last day.</p>
               </fieldset>
+
+              {(canBeDefault || media.defaultSlide) && (
+                <div className="flex items-start gap-3">
+                  <input
+                    id="media-default"
+                    type="checkbox"
+                    checked={defaultSlide}
+                    onChange={(e) => setDefaultSlide(e.target.checked)}
+                    aria-describedby="media-default-help"
+                    className="mt-0.5 size-4 accent-neel"
+                  />
+                  <div className="grid gap-0.5">
+                    <Label htmlFor="media-default">Default slide</Label>
+                    <p id="media-default-help" className="text-sm text-muted-foreground">
+                      Shown on any screen with nothing else to play, instead of a blank screen. Its dates are ignored. Choosing it
+                      replaces the current default slide.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {error && (
                 <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-sm text-destructive">

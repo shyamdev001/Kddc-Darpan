@@ -62,6 +62,9 @@ export function MediaTile({ item, onOpen }: { item: MediaItem; onOpen: () => voi
               {schedule.label}
             </span>
           )}
+          {item.defaultSlide && (
+            <span className="absolute top-2 right-2 rounded bg-neel px-1.5 py-0.5 text-xs font-medium text-white">Default slide</span>
+          )}
         </div>
 
         <div className="mt-2.5 px-0.5">

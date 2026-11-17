@@ -31,6 +31,8 @@ export interface MediaItem {
   updatedAt: string;
   thumbUrl: string | null;
   fileUrl: string | null;
+  /** Shown on any screen that has nothing else to play. At most one poster is the default slide. */
+  defaultSlide: boolean;
 }
 
 export interface MediaListResponse {
@@ -55,4 +57,6 @@ export interface UpdateMediaRequest {
   startDate?: string | null;
   endDate?: string | null;
   tags?: string[];
+  /** Make this poster the default slide (true), or stop it being one (false). */
+  defaultSlide?: boolean;
 }

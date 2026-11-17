@@ -73,6 +73,11 @@ export interface Manifest {
   app?: ManifestApp | null;
   /** Shown instead of the playlists (even outside display hours) until it ends. */
   broadcast?: ManifestBroadcast | null;
+  /**
+   * The default slide (its file is first in `items`): shown whenever nothing else can play, so a
+   * screen is never black or technical during display hours. Its dates are ignored.
+   */
+  fallbackMediaId?: string | null;
 }
 
 /** A TV app build (APK) in the manifest. Download with the device token, check sha256, install. */

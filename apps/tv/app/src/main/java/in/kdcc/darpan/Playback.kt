@@ -99,6 +99,9 @@ class Playback(
     private var exo: ExoPlayer? = null
     private var preloaded: Pair<String, Bitmap>? = null
 
+    /** The default slide's file while it is on screen, so it is not faded in again every pass. */
+    private var fallbackShown: String? = null
+
     private val maxSide: Int
     private val minSide: Int
     private val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
@@ -165,6 +168,7 @@ class Playback(
     private fun blank() {
         plays.end()
         currentMediaId = null
+        fallbackShown = null
         preloaded = null
         queueKey = null
         exo?.stop()
@@ -264,13 +268,19 @@ class Playback(
             }
             val queue = queueNow(m, now, clockCertain)
             if (queue == null) {
-                if (currentMediaId != null) plays.end()
-                currentMediaId = null
-                setState(PlayState.NOTHING)
+                if (currentMediaId != null && fallbackShown == null) plays.end()
                 onIdleReason(idleReason(m, now))
+                // Never a blank or technical screen in opening hours: the default slide if the TV has it.
+                val fallback = m.fallbackMediaId?.let { id -> m.items.firstOrNull { it.mediaId == id } }?.takeIf { cache.has(it) }
+                if (fallback == null || !showFallback(fallback)) {
+                    currentMediaId = null
+                    fallbackShown = null
+                    setState(PlayState.NOTHING)
+                }
                 delay(5_000) // new downloads or a new manifest are picked up on the next pass
                 continue
             }
+            fallbackShown = null
             setState(PlayState.PLAYING)
             if (queue.key != queueKey) {
                 // a different playlist took over (time slot started or ended): start it from the top
@@ -295,17 +305,26 @@ class Playback(
         }
     }
 
-    private suspend fun showImage(cue: Cue, cues: List<Cue>): Boolean {
-        val item = cue.item
-        val started = SystemClock.elapsedRealtime()
-        val ready = preloaded?.takeIf { it.first == item.sha256 }?.second
-        preloaded = null
-        val bitmap = ready ?: withContext(Dispatchers.IO) { decode(cache.fileFor(item)) }
+    /** Puts the default slide up (crossfade), unless it is already up. Not a play: nothing is logged. */
+    private suspend fun showFallback(item: ManifestItem): Boolean {
+        if (fallbackShown == item.sha256) return true
+        val bitmap = withContext(Dispatchers.IO) { decode(cache.fileFor(item)) }
         if (bitmap == null) {
-            cache.discard(item) // corrupt file: download it again on the next sync
+            cache.discard(item)
             return false
         }
+        plays.end()
+        setState(PlayState.PLAYING)
+        val outgoing = present(bitmap)
+        nowPlaying(item.mediaId)
+        fallbackShown = item.sha256
+        delay(FADE_MS)
+        outgoing.setImageDrawable(null)
+        return true
+    }
 
+    /** Crossfades [bitmap] in over whatever is up, hides a video; returns the view to clear after the fade. */
+    private fun present(bitmap: Bitmap): ImageView {
         val incoming = back
         val outgoing = front
         incoming.setImageBitmap(bitmap)
@@ -318,6 +337,21 @@ class Playback(
             videoView.visibility = View.GONE
             exo?.stop()
         }
+        return outgoing
+    }
+
+    private suspend fun showImage(cue: Cue, cues: List<Cue>): Boolean {
+        val item = cue.item
+        val started = SystemClock.elapsedRealtime()
+        val ready = preloaded?.takeIf { it.first == item.sha256 }?.second
+        preloaded = null
+        val bitmap = ready ?: withContext(Dispatchers.IO) { decode(cache.fileFor(item)) }
+        if (bitmap == null) {
+            cache.discard(item) // corrupt file: download it again on the next sync
+            return false
+        }
+
+        val outgoing = present(bitmap)
         nowPlaying(item.mediaId)
         plays.start(item.mediaId)
 

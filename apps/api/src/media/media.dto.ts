@@ -3,6 +3,7 @@ import { MEDIA_PAGE_MAX } from '@darpan/shared';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsISO8601,
@@ -68,4 +69,8 @@ export class UpdateMediaDto {
   @IsString({ each: true })
   @MaxLength(40, { each: true })
   tags?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  defaultSlide?: boolean;
 }
