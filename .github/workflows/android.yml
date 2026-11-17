@@ -66,7 +66,7 @@ jobs:
       - name: Report build errors
         if: failure()
         run: |
-          cat test.log build.log 2>/dev/null | grep -E '^e: |error: |What went wrong|Could not resolve|FAILED|> ' | head -40 | while IFS= read -r line; do
+          cat test.log build.log 2>/dev/null | grep -v '^> Task' | grep -iE '^e: |error|What went wrong|Could not resolve|FAILED|duplicate|^> |at .*\.xml' | head -40 | while IFS= read -r line; do
             echo "::error::$line"
           done
 
