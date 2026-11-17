@@ -177,7 +177,7 @@ export interface ScreensChangedPayload {
 export const PAIRING_CODE_TTL_MS = 30 * 60_000;
 
 /** Commands the dashboard can send to one TV. */
-export const REMOTE_COMMANDS = ['reload', 'restart', 'clearCache', 'screenshot', 'kioskUnlock', 'kioskLock'] as const;
+export const REMOTE_COMMANDS = ['reload', 'restart', 'clearCache', 'screenshot', 'kioskUnlock', 'kioskLock', 'screenOffTest'] as const;
 export type RemoteCommandType = (typeof REMOTE_COMMANDS)[number];
 
 /** POST /api/screens/:id/commands */

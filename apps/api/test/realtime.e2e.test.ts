@@ -268,3 +268,30 @@ describe('what each TV can do', () => {
     assert.equal((await call(t.base, 'GET', '/broadcasts/reach?level=REGION', { cookie: admin })).status, 400);
   });
 });
+
+describe('"Test screen off"', () => {
+  it('reaches the TV, and its answer (with the reason) shows in the command list and as a capability', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Night TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const got = new Promise<{ commandId: string; type: string }>((resolve) => device.once('command', resolve));
+    const sent = await call(t.base, 'POST', `/screens/${tv.deviceId}/commands`, { cookie: admin, body: { type: 'screenOffTest' } });
+    assert.equal(sent.status, 201, JSON.stringify(sent.body));
+    const cmd = await got;
+    assert.equal(cmd.type, 'screenOffTest');
+
+    const reason = "This TV ignores the app's screen-off request. Use the TV's own on/off timer.";
+    await device.timeout(3_000).emitWithAck('command:ack', { commandId: cmd.commandId, ok: false, error: reason });
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    await device.timeout(3_000).emitWithAck('heartbeat', {
+      ...base,
+      capabilities: { sdk: 28, webView: null, h264_1080p: true, hevc: null, deviceOwner: true, brightness: null, network: { type: 'ethernet', wifiDbm: null }, screenOff: false, videoInScreenshot: null },
+    });
+
+    const list = (await call(t.base, 'GET', `/screens/${tv.deviceId}/commands`, { cookie: admin })).body as { type: string; status: string; error: string }[];
+    const entry = list.find((c) => c.type === 'screenOffTest');
+    assert.equal(entry?.status, 'FAILED');
+    assert.equal(entry?.error, reason);
+    assert.equal((await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body.capabilities.screenOff, false);
+  });
+});

@@ -501,6 +501,16 @@ class MainActivity : Activity(), DeviceLink.Listener {
                     l?.sendAck(commandId, false, "Upload failed: ${e.message ?: "network error"}")
                 }
             }
+            "screenOffTest" -> scope.launch {
+                val result = ScreenOff.test(this@MainActivity)
+                if (result == null) {
+                    l?.sendAck(commandId, false, "Kiosk mode is not set up: the app cannot switch the screen off")
+                    return@launch
+                }
+                Capabilities.learn(this@MainActivity, Capabilities.KEY_SCREEN_OFF, result.works)
+                l?.sendAck(commandId, result.works, result.problem)
+                l?.sendHeartbeat()
+            }
             "kioskUnlock" -> {
                 val ok = Kiosk.startMaintenance(this)
                 l?.sendAck(commandId, ok, if (ok) null else "Kiosk mode is not set up on this TV")

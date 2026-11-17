@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Wi-Fi signal strength for the screen page (older Android only; normal permission, no prompt). -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- "Test screen off": keep running while the panel is off, then switch it back on. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- App updates (OTA): silent install works only while the app is device owner (kiosk mode). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

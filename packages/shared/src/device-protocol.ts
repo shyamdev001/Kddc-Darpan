@@ -179,6 +179,8 @@ export type DeviceCommandType =
   | 'clearCache'
   | 'kioskUnlock'
   | 'kioskLock'
+  /** Switch the panel off for 10 s and back on: finds out whether this TV model can sleep at night. */
+  | 'screenOffTest'
   | 'emergency:show'
   | 'emergency:clear';
 

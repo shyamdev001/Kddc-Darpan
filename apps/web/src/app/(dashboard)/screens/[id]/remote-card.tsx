@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { KIOSK_MAINTENANCE_MIN, type KioskState, type RemoteCommandType, type ScreenCommandEntry, type ScreenDetail } from "@darpan/shared";
-import { Camera, Eraser, Loader2, Lock, LockOpen, Power, RefreshCw } from "lucide-react";
+import { Camera, Eraser, Loader2, Lock, LockOpen, MoonStar, Power, RefreshCw } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -23,6 +23,7 @@ const LABEL: Record<string, string> = {
   screenshot: "Screenshot",
   kioskUnlock: "Unlock for maintenance",
   kioskLock: "Lock",
+  screenOffTest: "Test screen off",
 };
 
 const TIME = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
@@ -47,6 +48,12 @@ const ACTIONS: { type: RemoteCommandType; icon: typeof RefreshCw; text: string; 
   { type: "reload", icon: RefreshCw, text: "Reload content", hint: "Fetch the playlist again" },
   { type: "restart", icon: Power, text: "Restart app", hint: "Close and reopen the app" },
   { type: "clearCache", icon: Eraser, text: "Clear files", hint: "Delete saved files and download them again" },
+  {
+    type: "screenOffTest",
+    icon: MoonStar,
+    text: "Test screen off",
+    hint: "Panel off for 10 seconds, then on: can this TV sleep at night?",
+  },
 ];
 
 const waiting = (c: ScreenCommandEntry) => c.status === "PENDING" || c.status === "SENT";
