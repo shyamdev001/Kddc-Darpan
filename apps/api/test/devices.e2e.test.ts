@@ -4,6 +4,7 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PlaylistResolver, screenPlaceSelect } from '../src/screens/playlist-resolver.service';
+import { ManifestService } from '../src/screens/manifest.service';
 import { assign, call, createMedia, createPlaces, createPlaylist, createUser, login, pairedTv, registerTv, resetDb, startApp, type TestApp, type TestTv } from './helpers';
 
 let t: TestApp;
@@ -18,7 +19,12 @@ before(async () => {
 });
 after(() => t.close());
 
-const manifest = (tv: TestTv) => call(t.base, 'GET', '/devices/manifest', { token: tv.deviceToken });
+// These tests change rows directly, without the change events the dashboard's own edits send,
+// so the manifest kept from the last fetch is dropped first.
+const manifest = (tv: TestTv) => {
+  t.app.get(ManifestService).invalidate(null);
+  return call(t.base, 'GET', '/devices/manifest', { token: tv.deviceToken });
+};
 const playlistNames = async (tv: TestTv) => {
   const res = await manifest(tv);
   assert.equal(res.status, 200);

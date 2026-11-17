@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, type OnModuleDestroy } from '@nestjs/common';
+import type { Subscription } from 'rxjs';
 import { youtubeId, type Manifest, type ManifestApp, type ManifestBroadcast, type ManifestItem, type ManifestPlaylist, type ManifestSettings } from '@darpan/shared';
 import { createHash } from 'node:crypto';
 import type { Prisma } from '../generated/prisma/client';
 import { effectiveSeconds } from '../playlists/playlists.service';
+import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlaylistResolver, screenPlaceSelect } from './playlist-resolver.service';
 
@@ -10,12 +12,43 @@ function publicBase(): string {
   return (process.env.PUBLIC_BASE_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
 }
 
+/** A manifest built for a TV is reused for this long, unless content changes first. */
+export const MANIFEST_CACHE_MS = 30_000;
+
 @Injectable()
-export class ManifestService {
+export class ManifestService implements OnModuleDestroy {
+  // A content change sends "manifest:updated" to every affected TV, and each then fetches its
+  // manifest: the one built for the push is kept and handed out, instead of building it twice.
+  private readonly cache = new Map<string, { until: number; manifest: Manifest }>();
+  // Bumped on every change, so a build that started before a change is never cached after it.
+  private generation = 0;
+  private readonly sub: Subscription;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly resolver: PlaylistResolver,
-  ) {}
+    events: ContentEvents,
+  ) {
+    this.sub = events.changes.subscribe((c) => this.invalidate(c.all ? null : c.screenIds));
+  }
+
+  onModuleDestroy() {
+    this.sub.unsubscribe();
+  }
+
+  /** Forget cached manifests: of these screens, or all (null). */
+  invalidate(screenIds: string[] | null): void {
+    this.generation++;
+    if (screenIds === null) this.cache.clear();
+    else for (const id of screenIds) this.cache.delete(id);
+  }
+
+  /** For the TV's own fetch: the recently built manifest when nothing changed since, else a new one. */
+  async forDevice(screenId: string, now = Date.now()): Promise<Manifest> {
+    const hit = this.cache.get(screenId);
+    if (hit && now < hit.until) return hit.manifest;
+    return this.build(screenId);
+  }
 
   /**
    * What this TV should play. It lists every playlist that may play (timed ones first, with their
@@ -24,6 +57,17 @@ export class ManifestService {
    * left out. Upcoming ads are included with validFrom so the TV can download them early.
    */
   async build(screenId: string): Promise<Manifest> {
+    const generation = this.generation;
+    const manifest = await this.buildFresh(screenId);
+    if (generation === this.generation) {
+      // Never kept past a broadcast's end: the next fetch must already be without it.
+      const ends = manifest.broadcast?.endsAt ? Date.parse(manifest.broadcast.endsAt) : Infinity;
+      this.cache.set(screenId, { until: Math.min(Date.now() + MANIFEST_CACHE_MS, ends), manifest });
+    }
+    return manifest;
+  }
+
+  private async buildFresh(screenId: string): Promise<Manifest> {
     const screen = await this.prisma.screen.findUnique({ where: { id: screenId }, select: { ...screenPlaceSelect, orientation: true, testUpdates: true } });
     if (!screen) throw new NotFoundException();
 

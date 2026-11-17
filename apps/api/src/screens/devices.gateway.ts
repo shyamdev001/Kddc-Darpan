@@ -26,6 +26,9 @@ const room = (screenId: string) => `screen:${screenId}`;
 const mb = (bytes: unknown) => (typeof bytes === 'number' && Number.isFinite(bytes) && bytes >= 0 ? Math.round(bytes / 1_048_576) : undefined);
 const shortText = (v: unknown, max: number) => (typeof v === 'string' && v.length <= max ? v : undefined);
 
+/** Manifests built at the same time when pushing a change. */
+const PUSH_CONCURRENCY = 6;
+
 /**
  * Live channel to the TVs. A TV connects with its device token, sends a heartbeat every 60 s,
  * and is told `manifest:updated` whenever what it should play changes.
@@ -211,13 +214,24 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       const sockets = await this.ns.fetchSockets();
       const connected = new Set(sockets.map((s) => (s.data as Partial<DeviceData>).screenId).filter((x): x is string => !!x));
       const targets = (screenIds ?? [...connected]).filter((id) => connected.has(id));
-      for (const id of targets) {
-        const paired = await this.prisma.screen.count({ where: { id, status: { not: 'PENDING' } } });
-        if (!paired) continue;
-        const { version } = await this.manifests.build(id);
-        this.ns.to(room(id)).emit('manifest:updated', { version });
-      }
-      if (targets.length) this.logger.log(`manifest:updated sent to ${targets.length} screen(s)`);
+      const paired = targets.length
+        ? (await this.prisma.screen.findMany({ where: { id: { in: targets }, status: { not: 'PENDING' } }, select: { id: true } })).map((r) => r.id)
+        : [];
+      // A few at a time: quick for 101 TVs without flooding the database's connection pool.
+      let next = 0;
+      const worker = async () => {
+        while (next < paired.length) {
+          const id = paired[next++];
+          try {
+            const { version } = await this.manifests.build(id);
+            this.ns.to(room(id)).emit('manifest:updated', { version });
+          } catch (err) {
+            this.logger.warn(`Manifest for screen ${id} failed: ${(err as Error).message}`);
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(PUSH_CONCURRENCY, paired.length) }, worker));
+      if (paired.length) this.logger.log(`manifest:updated sent to ${paired.length} screen(s)`);
     } catch (err) {
       this.logger.error('Failed to push manifest updates', err as Error);
     }

@@ -41,7 +41,7 @@ export class DevicesController {
   @UseGuards(DeviceGuard)
   manifest(@Req() req: Request): Promise<Manifest> {
     if (req.screen!.status === 'PENDING') throw new ForbiddenException('Screen is not paired yet');
-    return this.manifests.build(req.screen!.id);
+    return this.manifests.forDevice(req.screen!.id);
   }
 
   /** Media download for TVs. sendFile supports Range, so interrupted downloads can resume. */
