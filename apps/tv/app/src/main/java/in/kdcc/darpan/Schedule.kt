@@ -65,6 +65,25 @@ object Schedule {
         }
     }
 
+    /**
+     * When the window that makes these slots play right now began, in ms; null if none is active.
+     * A timed playlist is anchored there, so every screen starts it at its first item when the slot
+     * opens. A window that started yesterday evening (past midnight) began yesterday.
+     */
+    fun windowStart(slots: List<TimeSlot>, nowMs: Long): Long? {
+        val slot = slots.firstOrNull { slotActive(it, nowMs) } ?: return null
+        val start = if (slot.start == null) 0 else toMinutes(slot.start) ?: return null
+        val c = calendar(nowMs)
+        val nowMin = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE)
+        c.set(Calendar.HOUR_OF_DAY, 0)
+        c.set(Calendar.MINUTE, 0)
+        c.set(Calendar.SECOND, 0)
+        c.set(Calendar.MILLISECOND, 0)
+        if (nowMin < start) c.add(Calendar.DAY_OF_MONTH, -1)
+        c.add(Calendar.MINUTE, start)
+        return c.timeInMillis
+    }
+
     /** No slots means "always". */
     fun slotsActive(slots: List<TimeSlot>, nowMs: Long): Boolean = slots.isEmpty() || slots.any { slotActive(it, nowMs) }
 

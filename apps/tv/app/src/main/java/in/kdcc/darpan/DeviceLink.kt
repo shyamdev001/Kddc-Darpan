@@ -59,8 +59,8 @@ class DeviceLink(
         s.on(Socket.EVENT_CONNECT, Emitter.Listener {
             main.post {
                 sendHeartbeat()
-                // A few quick time checks right away, so broadcasts are in step from the start.
-                for (i in 0 until 3) main.postDelayed({ askTime() }, i * 1_500L)
+                // A burst of time checks right away, so screens are in step from the start.
+                timeBurst()
             }
         })
         s.on("manifest:updated", Emitter.Listener { args ->
@@ -119,7 +119,15 @@ class DeviceLink(
         } catch (e: Exception) {
             Log.w(TAG, "heartbeat failed", e)
         }
-        askTime()
+        if (SystemClock.elapsedRealtime() - lastBurst >= TIME_EVERY_MS) timeBurst()
+    }
+
+    private var lastBurst = 0L
+
+    /** Several quick time checks, 300 ms apart: the estimator keeps the quick ones and takes their median. */
+    private fun timeBurst() {
+        lastBurst = SystemClock.elapsedRealtime()
+        for (i in 0 until TIME_BURST) main.postDelayed({ askTime() }, i * 300L)
     }
 
     /** Asks the server for its exact time, for [SyncClock]. Tiny, and answered at once. */
@@ -157,5 +165,7 @@ class DeviceLink(
         const val TAG = "DeviceLink"
         const val HEARTBEAT_MS = 60_000L
         const val RETRY_MS = 30_000L
+        const val TIME_BURST = 8
+        const val TIME_EVERY_MS = 5 * 60_000L
     }
 }
