@@ -50,17 +50,26 @@ export class AuthGuard implements CanActivate {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, name: true, role: true, isActive: true, regionId: true, branchId: true, passwordChangedAt: true, totpEnabled: true },
+      select: { id: true, email: true, name: true, role: true, isActive: true, regionId: true, branchId: true, passwordChangedAt: true, sessionsValidAfter: true, totpEnabled: true },
     });
     if (!user || !user.isActive) throw new UnauthorizedException('Account disabled');
     // A password change or reset signs out every session issued before it.
-    const issued = (payload as SessionPayload & { iat?: number }).iat ?? 0;
+    // So does "Sign out everywhere".
+    const issued = payload.iat ?? 0;
     if (user.passwordChangedAt && issued * 1000 < user.passwordChangedAt.getTime()) {
       throw new UnauthorizedException('Session expired');
     }
+    if (user.sessionsValidAfter && issued * 1000 < user.sessionsValidAfter.getTime()) {
+      throw new UnauthorizedException('Session expired');
+    }
+    // A session that was signed out stays signed out, even if its cookie was copied.
+    if (payload.jti && (await this.prisma.revokedSession.findUnique({ where: { id: payload.jti }, select: { id: true } }))) {
+      throw new UnauthorizedException('Session expired');
+    }
 
-    const { isActive: _ignored, passwordChangedAt: _changed, totpEnabled, ...authUser } = user;
+    const { isActive: _ignored, passwordChangedAt: _changed, sessionsValidAfter: _after, totpEnabled, ...authUser } = user;
     req.user = authUser;
+    req.session = payload;
 
     if (
       !totpEnabled &&

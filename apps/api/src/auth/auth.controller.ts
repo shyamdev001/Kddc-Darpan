@@ -61,7 +61,15 @@ export class AuthController {
   @Post('logout')
   @HttpCode(200)
   async logout(@CurrentUser() user: AuthUser, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    await this.auth.logout(user, req.ip);
+    await this.auth.logout(user, req.session, req.ip);
+    res.clearCookie(SESSION_COOKIE, cookieOptions());
+    return { ok: true };
+  }
+
+  @Post('logout-everywhere')
+  @HttpCode(200)
+  async logoutEverywhere(@CurrentUser() user: AuthUser, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    await this.auth.logoutEverywhere(user, req.ip);
     res.clearCookie(SESSION_COOKIE, cookieOptions());
     return { ok: true };
   }

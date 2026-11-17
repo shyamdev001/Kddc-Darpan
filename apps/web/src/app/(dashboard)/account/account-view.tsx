@@ -92,7 +92,47 @@ export function AccountView({ user, initial }: Props) {
           )}
         </div>
       </section>
+
+      <SignOutEverywhere />
     </div>
+  );
+}
+
+/** Ends this account's sessions on every computer, e.g. after signing in on a shared or lost one. */
+function SignOutEverywhere() {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setPending(true);
+    setError(null);
+    try {
+      await apiFetch("/api/auth/logout-everywhere", { method: "POST" });
+      router.replace("/login");
+      router.refresh();
+    } catch (e) {
+      setError((e as Error).message);
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="grid gap-3 rounded-xl border bg-card px-4 py-4 sm:px-5">
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight">Signed in somewhere else?</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          If you forgot to sign out on a shared or lost computer, this signs you out on every computer, including this one.
+        </p>
+      </div>
+      <ErrorNote text={error} />
+      <div>
+        <Button variant="outline" onClick={run} disabled={pending} className="h-10 px-4">
+          {pending && <Loader2 className="animate-spin" data-icon="inline-start" />}
+          Sign out everywhere
+        </Button>
+      </div>
+    </section>
   );
 }
 

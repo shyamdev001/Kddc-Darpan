@@ -313,6 +313,7 @@ model User {
   recoveryCodes     String[]  @default([]) // SHA-256 of unused one-time recovery codes
   lastLoginAt       DateTime?
   passwordChangedAt DateTime? // sessions issued before this are refused
+  sessionsValidAfter DateTime? // "Sign out everywhere": sessions issued before this are refused
   regionId          String?   @db.Uuid // scope for REGION_MANAGER
   branchId          String?   @db.Uuid // scope for BRANCH_VIEWER
   createdAt         DateTime  @default(now())
@@ -495,4 +496,13 @@ model Broadcast {
   endedBy   User?   @relation("BroadcastEndedBy", fields: [endedById], references: [id], onDelete: SetNull)
 
   @@index([endedAt, startedAt])
+}
+
+/// A signed-out session. Kept only until the session would have expired anyway.
+model RevokedSession {
+  id        String   @id // the session token's jti
+  userId    String   @db.Uuid
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }

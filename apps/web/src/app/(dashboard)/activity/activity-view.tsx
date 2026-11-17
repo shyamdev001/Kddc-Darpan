@@ -14,6 +14,7 @@ const ACTION_TEXT: Record<string, string> = {
   "auth.login": "Signed in",
   "auth.login_failed": "Failed sign-in",
   "auth.logout": "Signed out",
+  "auth.logout_everywhere": "Signed out on every computer",
   "auth.password_change": "Changed own password",
   "auth.password_change_failed": "Wrong current password when changing it",
   "auth.2fa_enable": "Turned on two-step sign-in",

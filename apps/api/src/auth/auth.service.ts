@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
@@ -87,8 +88,7 @@ export class AuthService {
       ipAddress: ip,
     });
 
-    const payload: SessionPayload = { sub: user.id, role: user.role };
-    const token = await this.jwt.signAsync(payload);
+    const token = await this.newSession(user.id, user.role);
     return {
       token,
       user: {
@@ -115,11 +115,35 @@ export class AuthService {
     const passwordChangedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
     await this.prisma.user.update({ where: { id: user.id }, data: { passwordHash, passwordChangedAt } });
     await this.audit.log({ userId: user.id, action: 'auth.password_change', entityType: 'User', entityId: user.id, ipAddress: ip });
-    const payload: SessionPayload = { sub: user.id, role: user.role };
-    return this.jwt.signAsync(payload);
+    return this.newSession(user.id, user.role);
   }
 
-  async logout(user: AuthUser, ip?: string): Promise<void> {
+  private newSession(sub: string, role: AuthUser['role']): Promise<string> {
+    const payload: SessionPayload = { sub, role };
+    return this.jwt.signAsync(payload, { jwtid: randomUUID() });
+  }
+
+  /** Ends this session on the server, not just in the browser: a copied cookie stops working. */
+  async logout(user: AuthUser, session: SessionPayload | undefined, ip?: string): Promise<void> {
+    if (session?.jti) {
+      const expiresAt = new Date((session.exp ?? Math.floor(Date.now() / 1000) + 24 * 3600) * 1000);
+      await this.prisma.revokedSession.upsert({
+        where: { id: session.jti },
+        create: { id: session.jti, userId: user.id, expiresAt },
+        update: {},
+      });
+    }
+    // Signed-out sessions that have expired anyway are no longer needed.
+    await this.prisma.revokedSession.deleteMany({ where: { expiresAt: { lt: new Date() } } });
     await this.audit.log({ userId: user.id, action: 'auth.logout', entityType: 'User', entityId: user.id, ipAddress: ip });
+  }
+
+  /** Ends every session of this user, on every computer. */
+  async logoutEverywhere(user: AuthUser, ip?: string): Promise<void> {
+    // Rounded up to the next whole second (token times are whole seconds), so a session issued
+    // earlier in this same second is refused too.
+    const sessionsValidAfter = new Date(Math.ceil((Date.now() + 1) / 1000) * 1000);
+    await this.prisma.user.update({ where: { id: user.id }, data: { sessionsValidAfter } });
+    await this.audit.log({ userId: user.id, action: 'auth.logout_everywhere', entityType: 'User', entityId: user.id, ipAddress: ip });
   }
 }

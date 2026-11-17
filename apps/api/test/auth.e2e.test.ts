@@ -71,6 +71,31 @@ describe('signing in', () => {
     assert.equal((await call(t.base, 'GET', '/auth/me', { cookie })).status, 401);
   });
 
+  it('a session copied before "Sign out" stops working after it', async () => {
+    const u = await createUser(t.prisma, 'HO_ADMIN');
+    const cookie = await login(t.base, u);
+    const copied = cookie; // e.g. taken from a shared head-office PC
+    assert.equal((await call(t.base, 'POST', '/auth/logout', { cookie })).status, 200);
+    assert.equal((await call(t.base, 'GET', '/auth/me', { cookie: copied })).status, 401);
+    // Signing in again gives a new, working session.
+    const fresh = await login(t.base, u);
+    assert.equal((await call(t.base, 'GET', '/auth/me', { cookie: fresh })).status, 200);
+  });
+
+  it('"Sign out" ends only that session; "Sign out everywhere" ends all of them', async () => {
+    const u = await createUser(t.prisma, 'HO_ADMIN');
+    const pcA = await login(t.base, u);
+    const pcB = await login(t.base, u);
+    const pcC = await login(t.base, u);
+    await call(t.base, 'POST', '/auth/logout', { cookie: pcA });
+    assert.equal((await call(t.base, 'GET', '/auth/me', { cookie: pcB })).status, 200, 'other computers stay signed in');
+    const all = await call(t.base, 'POST', '/auth/logout-everywhere', { cookie: pcB });
+    assert.equal(all.status, 200);
+    assert.equal((await call(t.base, 'GET', '/auth/me', { cookie: pcB })).status, 401);
+    assert.equal((await call(t.base, 'GET', '/auth/me', { cookie: pcC })).status, 401);
+    assert.equal(await t.prisma.auditLog.count({ where: { userId: u.id, action: 'auth.logout_everywhere' } }), 1);
+  });
+
   it('writes sign-ins to the activity log', async () => {
     const u = await createUser(t.prisma, 'HO_ADMIN');
     await login(t.base, u);

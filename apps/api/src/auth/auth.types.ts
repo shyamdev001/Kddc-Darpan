@@ -4,6 +4,9 @@ import type { UserRole } from '../generated/prisma/client';
 export interface SessionPayload {
   sub: string; // user id
   role: UserRole;
+  jti?: string; // session id, so one session can be signed out on the server
+  iat?: number;
+  exp?: number;
 }
 
 /** Issued after the password step when two-step sign-in is on. Never accepted as a session. */
@@ -25,5 +28,6 @@ export interface AuthUser {
 declare module 'express' {
   interface Request {
     user?: AuthUser;
+    session?: SessionPayload;
   }
 }
