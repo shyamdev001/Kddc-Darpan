@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -103,7 +104,12 @@ class PlayLogStore(
 
     private fun rewrite(lines: List<String>) {
         val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeText(if (lines.isEmpty()) "" else lines.joinToString("\n", postfix = "\n"))
+        // On disk before the rename, as ManifestStore does: a power cut must not leave an empty
+        // file and lose plays not yet sent (OF10).
+        FileOutputStream(tmp).use { out ->
+            out.write((if (lines.isEmpty()) "" else lines.joinToString("\n", postfix = "\n")).toByteArray(Charsets.UTF_8))
+            out.fd.sync()
+        }
         if (!tmp.renameTo(file)) {
             file.delete()
             tmp.renameTo(file)

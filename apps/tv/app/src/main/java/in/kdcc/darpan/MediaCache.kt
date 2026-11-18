@@ -51,7 +51,12 @@ class MediaCache(filesDir: File, private val http: OkHttpClient, private val pre
             if (!res.isSuccessful) throw ApiException(res.code, "Download failed for ${item.mediaId}")
             val append = have > 0 && res.code == 206 // server honoured the Range header
             val body = res.body ?: throw IOException("Empty response for ${item.mediaId}")
-            FileOutputStream(part, append).use { out -> body.byteStream().use { it.copyTo(out, 64 * 1024) } }
+            FileOutputStream(part, append).use { out ->
+                body.byteStream().use { it.copyTo(out, 64 * 1024) }
+                // On disk before it gets its verified name: a power cut right after the rename
+                // must not leave a file of zeros that passes the size check (OF3).
+                out.fd.sync()
+            }
         }
 
         if (part.length() != item.size || sha256(part) != item.sha256) {
