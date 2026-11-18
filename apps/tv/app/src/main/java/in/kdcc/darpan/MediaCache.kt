@@ -48,6 +48,7 @@ class MediaCache(filesDir: File, private val http: OkHttpClient, private val pre
         val builder = Request.Builder().url(item.url).header("Authorization", "Bearer ${prefs.deviceToken ?: ""}")
         if (have > 0) builder.header("Range", "bytes=$have-")
         http.newCall(builder.build()).execute().use { res ->
+            if (isWebPage(res.header("Content-Type"))) throw SignInPageException() // not a 401: no re-pairing
             if (!res.isSuccessful) throw ApiException(res.code, "Download failed for ${item.mediaId}")
             val append = have > 0 && res.code == 206 // server honoured the Range header
             val body = res.body ?: throw IOException("Empty response for ${item.mediaId}")

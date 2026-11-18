@@ -29,6 +29,7 @@ data class DownloadSummary(val ready: Int, val total: Int, val lastError: String
 fun describeDownloadFailure(e: Throwable?): String = when (e) {
     null -> "checksum did not match (file damaged on the way)"
     is NotEnoughSpaceException -> e.message ?: "storage full"
+    is SignInPageException -> e.message ?: "a network sign-in or proxy page answered instead of the server"
     is ApiException -> "server answered ${e.code}"
     is java.net.UnknownHostException -> "server not found (network or DNS)"
     is java.net.SocketTimeoutException -> "network too slow (timed out)"

@@ -14,6 +14,17 @@ import java.util.concurrent.TimeUnit
 /** An HTTP error from the server. 401 means the device token is no longer valid. */
 class ApiException(val code: Int, message: String) : IOException(message)
 
+/**
+ * A web page answered instead of our server: a hotel-style WiFi sign-in page or a bank proxy's
+ * block page (docs/AUDIT.md, OF8). Our server never answers with HTML, so this is never a lost key,
+ * even when the page came with 401 or 403.
+ */
+class SignInPageException : IOException("a network sign-in or proxy page answered instead of the server")
+
+/** True for an HTML reply. */
+fun isWebPage(contentType: String?): Boolean =
+    contentType?.substringBefore(';')?.trim()?.equals("text/html", ignoreCase = true) == true
+
 class Api(private val prefs: Prefs) {
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -78,6 +89,7 @@ class Api(private val prefs: Prefs) {
 
     private fun call(req: Request): String {
         http.newCall(req).execute().use { res ->
+            if (isWebPage(res.header("Content-Type"))) throw SignInPageException()
             val text = res.body?.string() ?: ""
             if (!res.isSuccessful) throw ApiException(res.code, text.take(200))
             return text

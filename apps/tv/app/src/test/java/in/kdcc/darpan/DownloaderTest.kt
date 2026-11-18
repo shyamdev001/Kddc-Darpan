@@ -6,6 +6,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
@@ -174,5 +175,19 @@ class DownloaderTest {
         assertEquals("server answered 404", describeDownloadFailure(ApiException(404, "Not found")))
         assertEquals("network too slow (timed out)", describeDownloadFailure(java.net.SocketTimeoutException()))
         assertEquals("storage full: needs 1 MB, 0 MB free", describeDownloadFailure(NotEnoughSpaceException("storage full: needs 1 MB, 0 MB free")))
+        // A WiFi sign-in or proxy page, not "checksum did not match" (OF8).
+        assertEquals("a network sign-in or proxy page answered instead of the server", describeDownloadFailure(SignInPageException()))
+    }
+
+    @Test
+    fun aWebPageReply_isRecognised_soItIsNeverTakenForALostKey() {
+        assertTrue(isWebPage("text/html"))
+        assertTrue(isWebPage("text/HTML; charset=iso-8859-1"))
+        assertFalse(isWebPage("application/json; charset=utf-8"))
+        assertFalse(isWebPage("image/jpeg"))
+        assertFalse(isWebPage("video/mp4"))
+        assertFalse(isWebPage(null))
+        val e: java.io.IOException = SignInPageException()
+        assertFalse(e is ApiException) // so a proxy's 403 page never starts re-pairing
     }
 }
