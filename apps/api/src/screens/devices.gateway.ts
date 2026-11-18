@@ -16,7 +16,7 @@ import type { Namespace, Socket } from 'socket.io';
 import { ContentEvents } from '../events/content-events';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { cleanCapabilities } from './capabilities';
+import { cleanCapabilities, cleanUnplayable } from './capabilities';
 import { cleanPlaySync } from './play-sync';
 import { crashReport } from './crash-report';
 import { hashDeviceToken } from './device-auth';
@@ -193,6 +193,8 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
         // Older app versions send no sync report: leave what we had.
         ...(cleanPlaySync(body.sync) ? { playSync: cleanPlaySync(body.sync) as unknown as Prisma.InputJsonObject } : {}),
         ...('crash' in body ? { lastCrash: (crashReport(body.crash) as Prisma.InputJsonObject | null) ?? Prisma.DbNull } : {}),
+        // Older app versions send no list: leave what we had.
+        ...(Array.isArray(body.unplayable) ? { unplayable: cleanUnplayable(body.unplayable) as unknown as Prisma.InputJsonArray } : {}),
         // Older app versions send no download summary: leave what we had.
         ...(count(body.filesReady) !== undefined && count(body.filesTotal) !== undefined && body.filesReady! <= body.filesTotal!
           ? { filesReady: body.filesReady, filesTotal: body.filesTotal, downloadError: shortText(body.downloadError, 200) ?? null }

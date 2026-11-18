@@ -27,6 +27,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -255,7 +256,7 @@ class BroadcastPlayer(
         val http = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             .setDefaultRequestProperties(mapOf("Authorization" to "Bearer ${prefs.deviceToken ?: ""}"))
-        val p = ExoPlayer.Builder(activity).setMediaSourceFactory(DefaultMediaSourceFactory(activity).setDataSourceFactory(http)).build()
+        val p = ExoPlayer.Builder(activity, DefaultRenderersFactory(activity).setEnableDecoderFallback(true)).setMediaSourceFactory(DefaultMediaSourceFactory(activity).setDataSourceFactory(http)).build()
         p.volume = if (b.muted) 0f else 1f
         val view = PlayerView(activity).apply {
             useController = false

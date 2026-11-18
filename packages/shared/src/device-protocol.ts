@@ -139,6 +139,8 @@ export interface HeartbeatPayload {
   safeMode?: boolean;
   /** What this TV model can do, detected on the TV at each start. */
   capabilities?: TvCapabilities;
+  /** Videos this TV cannot play (its decoder or sound output refused them); it skips them. */
+  unplayable?: { mediaId: string; reason: string }[];
   sync?: PlaySyncReport;
 }
 

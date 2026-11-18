@@ -7,6 +7,17 @@ const int = (v: unknown, min: number, max: number): number | null =>
 
 const NETWORK_TYPES = ['ethernet', 'wifi', 'other', 'none'] as const;
 
+/** Videos the TV cannot play (DC3): known shape only, at most 20, reasons cut short. */
+export function cleanUnplayable(v: unknown[]): { mediaId: string; reason: string }[] {
+  const out: { mediaId: string; reason: string }[] = [];
+  for (const x of v.slice(0, 20)) {
+    const o = typeof x === 'object' && x !== null ? (x as Record<string, unknown>) : {};
+    if (typeof o.mediaId !== 'string' || !/^[0-9a-f-]{36}$/i.test(o.mediaId)) continue;
+    out.push({ mediaId: o.mediaId, reason: text(o.reason, 120) ?? 'cannot play on this TV' });
+  }
+  return out;
+}
+
 /** Keeps only the known fields, each checked and short. null when it is not a capabilities object at all. */
 export function cleanCapabilities(v: unknown): TvCapabilities | null {
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return null;

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { cleanCapabilities } from './capabilities';
+import { cleanCapabilities, cleanUnplayable } from './capabilities';
 import { cleanPlaySync } from './play-sync';
 import { crashReport } from './crash-report';
 import {
@@ -56,6 +56,7 @@ const NEW_TV_STATE = {
   filesTotal: null,
   downloadError: null,
   lastCrash: Prisma.DbNull,
+  unplayable: Prisma.DbNull,
   safeMode: false,
   capabilities: Prisma.DbNull,
   playSync: Prisma.DbNull,
@@ -295,12 +296,17 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
     await this.assertVisible(id, user);
     const s = await this.prisma.screen.findUnique({ where: { id }, include: screenInclude });
     if (!s || (s.status === 'PENDING' && s.name === null)) throw new NotFoundException('Screen not found');
-    const [playlist, layers, inherited, hours] = await Promise.all([
+    const reported = Array.isArray(s.unplayable) ? cleanUnplayable(s.unplayable) : [];
+    const [playlist, layers, inherited, hours, unplayableMedia] = await Promise.all([
       this.resolver.resolve(s),
       this.resolver.layers(s),
       this.resolver.layers(s, true),
       this.resolver.hours(s),
+      reported.length
+        ? this.prisma.media.findMany({ where: { id: { in: reported.map((u) => u.mediaId) } }, select: { id: true, displayName: true } })
+        : Promise.resolve([]),
     ]);
+    const mediaName = new Map(unplayableMedia.map((m) => [m.id, m.displayName]));
     // the always-on playlist from the levels above: what "follow its branch" means
     const fallback = inherited.find((l) => !l.slots.length) ?? null;
     return {
@@ -322,6 +328,8 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
       files: screenFiles(s),
       crash: screenCrash(s.lastCrash),
       safeMode: s.safeMode,
+      // Ads deleted since are left out: nothing to act on.
+      unplayable: reported.flatMap((u) => (mediaName.has(u.mediaId) ? [{ mediaId: u.mediaId, name: mediaName.get(u.mediaId)!, reason: u.reason }] : [])),
       capabilities: cleanCapabilities(s.capabilities),
       playSync: cleanPlaySync(s.playSync),
       syncPlayback: s.branch?.syncPlayback ?? false,

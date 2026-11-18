@@ -462,6 +462,23 @@ function DeviceCard({
             videos and live links. Restart the app from this page to try everything again.
           </p>
         )}
+        {screen.unplayable.length > 0 && (
+          <div role="status" className="border-b bg-haldi/15 px-4 py-2.5 text-sm text-[#6b4a00] sm:px-5">
+            <p>
+              <span className="font-medium">
+                {screen.unplayable.length === 1 ? "1 video cannot play on this TV" : `${screen.unplayable.length} videos cannot play on this TV`}.
+              </span>{" "}
+              It skips {screen.unplayable.length === 1 ? "it" : "them"} and plays the rest; restarting the app tries again.
+            </p>
+            <ul className="mt-1 list-disc pl-5">
+              {screen.unplayable.map((u) => (
+                <li key={u.mediaId}>
+                  {u.name}: {u.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {screen.crash && <CrashNote crash={screen.crash} ago={formatAgo(screen.crash.at, now)} />}
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-4 py-4 text-sm sm:px-5">
           {facts.map(([label, value]) => (

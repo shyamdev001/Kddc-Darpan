@@ -12,6 +12,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.CancellationException
@@ -202,7 +203,33 @@ class Playback(
         exo = null
     }
 
-    private fun playable(item: ManifestItem?, now: Long): Boolean = item != null && inDateRange(item, now) && cache.has(item)
+    private fun playable(item: ManifestItem?, now: Long): Boolean =
+        item != null && inDateRange(item, now) && cache.has(item) && item.sha256 !in cannotPlay
+
+    // Videos this TV cannot play (DC3): skipped until the app restarts, and reported in the heartbeat.
+    private val cannotPlay = LinkedHashMap<String, Unplayable>()
+    private val redownloads = HashMap<String, Int>()
+
+    /** Read by the heartbeat. */
+    @Volatile
+    var unplayable: List<Unplayable> = emptyList()
+        private set
+
+    /** A video failed: download it again if that can help, otherwise skip it on this TV and say why. */
+    private fun videoError(item: ManifestItem, error: PlaybackException?) {
+        when (val a = VideoFailure.decide(error?.errorCode, redownloads[item.sha256] ?: 0)) {
+            is VideoFailure.Action.Redownload -> {
+                Log.w(TAG, "Video ${item.mediaId} failed (${error?.errorCodeName}); downloading it again")
+                redownloads[item.sha256] = (redownloads[item.sha256] ?: 0) + 1
+                cache.discard(item)
+            }
+            is VideoFailure.Action.Skip -> {
+                Log.w(TAG, "Video ${item.mediaId} cannot play on this TV: ${a.reason}")
+                cannotPlay[item.sha256] = Unplayable(item.mediaId, a.reason)
+                unplayable = cannotPlay.values.toList().takeLast(MAX_UNPLAYABLE)
+            }
+        }
+    }
 
     /**
      * The first playlist whose slots match now and that has something ready to show. A timed
@@ -419,13 +446,12 @@ class Playback(
             if (now >= until) return
             PlaybackPulse.beat(SystemClock.elapsedRealtime(), until - now)
             if (player.playerError != null) {
-                Log.w(TAG, "Video ${item.mediaId} failed to play; will download again")
                 plays.cancel()
+                videoError(item, player.playerError)
                 player.stop()
                 videoView.visibility = View.GONE
-                cache.discard(item)
                 driftMs = null
-                idle(m, "This ad could not play and is downloading again; the default slide fills its turn.")
+                idle(m, "This ad could not play; the default slide fills its turn.")
                 delay((until - SyncClock.now()).coerceAtLeast(1L))
                 return
             }
@@ -518,7 +544,11 @@ class Playback(
     }
 
     /** The one ExoPlayer, made when first needed and reused for every video. */
-    private fun player(): ExoPlayer = exo ?: ExoPlayer.Builder(context).build().also {
+    private fun player(): ExoPlayer = exo ?: ExoPlayer.Builder(
+        context,
+        // If the TV's first decoder will not start, try its next one before giving up (DC3).
+        DefaultRenderersFactory(context).setEnableDecoderFallback(true),
+    ).build().also {
         exo = it
         videoView.player = it
     }
@@ -561,9 +591,8 @@ class Playback(
     }
 
     private fun videoFailed(player: ExoPlayer, item: ManifestItem): Boolean {
-        Log.w(TAG, "Video ${item.mediaId} could not be opened; will download again")
+        videoError(item, player.playerError)
         player.stop()
-        cache.discard(item)
         return false
     }
 
@@ -612,11 +641,10 @@ class Playback(
             }
         }
         if (result == false) {
-            Log.w(TAG, "Video ${item.mediaId} failed to play; will download again")
             plays.cancel()
+            videoError(item, player.playerError)
             player.stop()
             videoView.visibility = View.GONE
-            cache.discard(item)
             return false
         }
         // The last frame stays up until the next item replaces it.
@@ -646,6 +674,7 @@ class Playback(
         const val FADE_MS = 600L
         const val VIDEO_CHECK_MS = 500L
         const val READY_WAIT_MS = 3_000L
+        const val MAX_UNPLAYABLE = 20
 
         /** Opening a video mid-way takes the player a moment; start it this far on so it lands in step. */
         const val OPEN_LEAD_MS = 400L

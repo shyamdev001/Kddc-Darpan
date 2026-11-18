@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { DASHBOARD_NAMESPACE, DASHBOARD_SOCKET_PATH, DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, filesProblem, ONLINE_WINDOW_MS, SCREENS_CHANGED_EVENT, type ScreensChangedPayload } from '@darpan/shared';
 import { io, type Socket } from 'socket.io-client';
 import { DevicesGateway } from '../src/screens/devices.gateway';
-import { call, createPlaces, createUser, login, pairedTv, resetDb, startApp, type TestApp } from './helpers';
+import { call, createMedia, createPlaces, createUser, login, pairedTv, resetDb, startApp, type TestApp } from './helpers';
 
 let t: TestApp;
 let origin: string;
@@ -240,6 +240,34 @@ describe('download problems reach head office', () => {
     // Nonsense is ignored, the last good report stays.
     await device.timeout(3_000).emitWithAck('heartbeat', { ...base, filesReady: 13, filesTotal: 12 });
     assert.deepEqual(await detail(), { ready: 12, total: 12, error: null });
+  });
+});
+
+describe('videos a TV cannot play reach head office (DC3)', () => {
+  it('are listed by ad name with the reason; junk is dropped; an empty list clears it', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Old decoder TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const media = await createMedia(t.prisma, 'Diwali offer video');
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    const detail = async () => (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body.unplayable;
+
+    assert.deepEqual(await detail(), []);
+    await device.timeout(3_000).emitWithAck('heartbeat', {
+      ...base,
+      unplayable: [
+        { mediaId: media.id, reason: 'this TV cannot decode this video format' },
+        { mediaId: 'not-an-id', reason: 'x' },
+        'junk',
+      ],
+    });
+    assert.deepEqual(await detail(), [{ mediaId: media.id, name: 'Diwali offer video', reason: 'this TV cannot decode this video format' }]);
+
+    // An older app sends no list: what we had stays. A restart that plays it fine sends an empty one.
+    await device.timeout(3_000).emitWithAck('heartbeat', base);
+    assert.equal((await detail()).length, 1);
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, unplayable: [] });
+    assert.deepEqual(await detail(), []);
   });
 });
 

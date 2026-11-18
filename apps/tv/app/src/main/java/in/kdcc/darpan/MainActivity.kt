@@ -36,6 +36,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -730,6 +731,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("capabilities", JSONObject(heartbeatJson.encodeToString(Capabilities.report(this))))
             .put("crash", crashes.report()?.let { JSONObject(heartbeatJson.encodeToString(it)) } ?: JSONObject.NULL)
             .put("sync", syncReport())
+            // Videos this TV cannot play (its decoder refused them), so head office knows why (DC3).
+            .put("unplayable", JSONArray(playback.unplayable.map { JSONObject().put("mediaId", it.mediaId).put("reason", it.reason) }))
             .apply {
                 if (::downloader.isInitialized) {
                     val files = downloader.summary

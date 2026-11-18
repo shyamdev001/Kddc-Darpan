@@ -120,6 +120,8 @@ export interface ScreenDetail extends ScreenSummary {
   crash: { at: string; type: string; message: string | null; frames: string[]; total: number; recent: number } | null;
   /** Many crashes lately: playing posters only (no video, no live links) for up to an hour. */
   safeMode: boolean;
+  /** Videos this TV skips because it cannot play them, with the ad's name and the reason in plain words. */
+  unplayable: { mediaId: string; name: string; reason: string }[];
   /** What the TV says it can do; null for app versions that do not report it. */
   capabilities: TvCapabilities | null;
   /** How the TV keeps to the shared timeline; null for app versions that do not report it. */
