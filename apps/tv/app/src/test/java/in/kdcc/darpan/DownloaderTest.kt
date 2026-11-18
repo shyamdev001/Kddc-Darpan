@@ -19,15 +19,20 @@ class DownloaderTest {
     @After
     fun tearDown() = scope.cancel()
 
-    private fun item(name: String) = ManifestItem(mediaId = name, url = "http://tv.test/$name", sha256 = name, size = 1, type = "IMAGE", durationSec = 10)
+    private fun item(name: String, size: Long = 1) = ManifestItem(mediaId = name, url = "http://tv.test/$name", sha256 = name, size = size, type = "IMAGE", durationSec = 10)
 
     private val stored: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
     private val fetched: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private val cleanups: MutableList<Set<String>> = Collections.synchronizedList(mutableListOf())
+    private val completes: MutableList<Boolean> = Collections.synchronizedList(mutableListOf())
     private val done = CountDownLatch(1)
     private var authLost = CountDownLatch(1)
 
-    private fun downloader(fetch: (ManifestItem) -> Boolean) = Downloader(
+    private fun downloader(
+        keepAlso: Set<String> = emptySet(),
+        freeBytes: Long = Long.MAX_VALUE,
+        fetch: (ManifestItem) -> Boolean,
+    ) = Downloader(
         scope,
         Dispatchers.IO,
         has = { it.sha256 in stored },
@@ -36,9 +41,14 @@ class DownloaderTest {
             fetch(item).also { if (it) stored += item.sha256 }
         },
         cleanup = { cleanups += it },
-        onDone = { done.countDown() },
+        onDone = { _, complete ->
+            completes += complete
+            done.countDown()
+        },
         onAuthLost = { authLost.countDown() },
         retryDelayMs = 1,
+        keepAlso = { keepAlso },
+        freeBytes = { freeBytes },
     )
 
     @Test
@@ -124,6 +134,38 @@ class DownloaderTest {
         d.want(Manifest(version = "1", items = listOf(item("poster-a"), item("poster-b"))))
         assertTrue(done.await(5, TimeUnit.SECONDS))
         assertEquals(DownloadSummary(ready = 2, total = 2, lastError = null), d.summary)
+    }
+
+    @Test
+    fun aPass_saysWhetherEveryFileArrived() {
+        val d = downloader { it.sha256 != "broken" }
+        d.want(Manifest(version = "1", items = listOf(item("broken"), item("poster-b"))))
+        assertTrue(done.await(5, TimeUnit.SECONDS))
+        assertEquals(listOf(false), completes.toList()) // so the TV keeps its old manifest on screen
+    }
+
+    @Test
+    fun theFilesOfTheManifestOnScreen_areKept() {
+        val d = downloader(keepAlso = setOf("old-poster")) { true }
+        d.want(Manifest(version = "2", items = listOf(item("new-poster"))))
+        assertTrue(done.await(5, TimeUnit.SECONDS))
+        assertEquals(listOf(setOf("new-poster", "old-poster")), cleanups.toList())
+        assertEquals(listOf(true), completes.toList())
+    }
+
+    @Test
+    fun notEnoughRoomForTheWholeCampaign_downloadsNothing_andSaysHowMuchIsNeeded() {
+        val mb = 1_048_576L
+        val d = downloader(freeBytes = 300 * mb) { true }
+        // 40 + 80 MB new, 300 MB free: 120 + 200 reserve does not fit.
+        d.want(Manifest(version = "1", items = listOf(item("video-1", 40 * mb), item("video-2", 80 * mb))))
+        assertTrue(done.await(5, TimeUnit.SECONDS))
+        assertTrue("nothing fetched", fetched.isEmpty())
+        assertEquals("unneeded files are cleared first", 1, cleanups.size)
+        assertEquals(listOf(false), completes.toList())
+        assertEquals(DownloadSummary(0, 2, "storage full: needs 320 MB for 2 new files, 300 MB free"), d.summary)
+        assertEquals(null, SpacePlan.shortage(120 * mb, 320 * mb, 2))
+        assertEquals(null, SpacePlan.shortage(0, 0, 0))
     }
 
     @Test

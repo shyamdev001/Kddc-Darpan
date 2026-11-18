@@ -36,6 +36,25 @@ fun describeDownloadFailure(e: Throwable?): String = when (e) {
     else -> "network error: ${e.message ?: e.javaClass.simpleName}".take(160)
 }
 
+/**
+ * Room for a manifest's new files (docs/AUDIT.md, OF4): checked for all of them before the first
+ * download, not file by file, so a nearly full TV does not end up with half a campaign.
+ */
+object SpacePlan {
+    /** Always left free for Android itself. */
+    const val RESERVE_BYTES = 200L * 1024 * 1024
+
+    /** Null when [needBytes] fits in [freeBytes] with the reserve left over; otherwise why not, in plain words. */
+    fun shortage(needBytes: Long, freeBytes: Long, files: Int): String? =
+        if (needBytes <= 0L || freeBytes >= needBytes + RESERVE_BYTES) {
+            null
+        } else {
+            "storage full: needs ${mb(needBytes + RESERVE_BYTES)} MB for $files new file${if (files == 1) "" else "s"}, ${mb(freeBytes)} MB free"
+        }
+
+    fun mb(bytes: Long): Long = (bytes + 1_048_575) / 1_048_576
+}
+
 class Downloader(
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
@@ -43,13 +62,17 @@ class Downloader(
     private val has: (ManifestItem) -> Boolean,
     /** Blocking. True when the file is verified and in place; false to try again. */
     private val fetch: (ManifestItem) -> Boolean,
-    /** Deletes files the finished manifest no longer needs (by SHA-256). */
+    /** Deletes every file whose SHA-256 is not in the set. */
     private val cleanup: (Set<String>) -> Unit,
-    /** Every file of the newest manifest is in place. */
-    private val onDone: () -> Unit,
+    /** A pass over the manifest ended: true when every one of its files is in place. */
+    private val onDone: (Manifest, Boolean) -> Unit,
     /** The server refused this TV's key (401/403). */
     private val onAuthLost: () -> Unit,
     private val retryDelayMs: Long = 3_000L,
+    /** Files to keep besides the manifest being downloaded: the one still on screen (OF2). */
+    private val keepAlso: () -> Set<String> = { emptySet() },
+    /** Free storage, in bytes. */
+    private val freeBytes: () -> Long = { Long.MAX_VALUE },
 ) {
     private val wanted = Channel<Manifest>(Channel.CONFLATED)
 
@@ -72,7 +95,7 @@ class Downloader(
     private suspend fun loop() {
         for (m in wanted) {
             try {
-                if (process(m)) onDone()
+                process(m)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiException) {
@@ -83,14 +106,27 @@ class Downloader(
         }
     }
 
-    /** False when a newer manifest arrived part-way; that one is handled next. */
-    private suspend fun process(m: Manifest): Boolean {
+    /** One pass over [m]'s files. Stops early, with no clean-up, when a newer manifest arrived. */
+    private suspend fun process(m: Manifest) {
         val files = (listOfNotNull(m.broadcast?.media) + m.items).distinctBy { it.sha256 }
         var ready = files.count(has)
         var lastError: String? = null
         summary = DownloadSummary(ready, files.size, summary.lastError)
+        val missing = files.filterNot(has)
+        if (missing.isNotEmpty()) {
+            val need = missing.sumOf { it.size }
+            // Make room first: files nothing needs any more go before the check, not after the downloads.
+            if (SpacePlan.shortage(need, freeBytes(), missing.size) != null) cleanup(keepFor(files))
+            val short = SpacePlan.shortage(need, freeBytes(), missing.size)
+            if (short != null) {
+                // No partial download: the TV keeps playing what it has and says why.
+                summary = DownloadSummary(ready, files.size, short)
+                onDone(m, false)
+                return
+            }
+        }
         for (item in files) {
-            if (latest !== m) return false
+            if (latest !== m) return
             if (has(item)) continue
             var failure: Throwable? = null
             var done = false
@@ -106,17 +142,19 @@ class Downloader(
                     false
                 }
                 if (done) break
-                if (latest !== m) return false
+                if (latest !== m) return
                 if (attempt < ATTEMPTS) delay(retryDelayMs * attempt)
             }
             if (done) ready++ else lastError = describeDownloadFailure(failure)
             summary = DownloadSummary(ready, files.size, lastError)
         }
-        if (latest !== m) return false
+        if (latest !== m) return
         summary = DownloadSummary(ready, files.size, lastError)
-        cleanup(files.map { it.sha256 }.toSet())
-        return true
+        cleanup(keepFor(files))
+        onDone(m, ready == files.size)
     }
+
+    private fun keepFor(files: List<ManifestItem>): Set<String> = files.map { it.sha256 }.toSet() + keepAlso()
 
     private companion object {
         const val ATTEMPTS = 3

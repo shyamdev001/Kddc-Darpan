@@ -13,9 +13,9 @@ import java.io.IOException
  * - the previous good copy is kept as `manifest.json.bak`;
  * - loading checks the saved text (`isValid`, e.g. "it parses") and falls back to the backup.
  */
-class ManifestStore(dir: File, private val isValid: (String) -> Boolean = { true }) {
-    private val file = File(dir, "manifest.json")
-    private val backup = File(dir, "manifest.json.bak")
+class ManifestStore(dir: File, name: String = "manifest.json", private val isValid: (String) -> Boolean = { true }) {
+    private val file = File(dir, name)
+    private val backup = File(dir, "$name.bak")
 
     @Throws(IOException::class)
     fun save(raw: String) {

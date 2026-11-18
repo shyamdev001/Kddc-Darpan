@@ -34,9 +34,9 @@ class MediaCache(filesDir: File, private val http: OkHttpClient, private val pre
     fun download(item: ManifestItem): Boolean {
         if (has(item)) return true
         val free = dir.usableSpace
-        if (free < item.size + RESERVE_BYTES) {
+        if (free < item.size + SpacePlan.RESERVE_BYTES) {
             Log.w(TAG, "Not enough space for ${item.mediaId} (${item.size} bytes)")
-            throw NotEnoughSpaceException("storage full: needs ${mb(item.size + RESERVE_BYTES)} MB, ${mb(free)} MB free")
+            throw NotEnoughSpaceException("storage full: needs ${SpacePlan.mb(item.size + SpacePlan.RESERVE_BYTES)} MB, ${SpacePlan.mb(free)} MB free")
         }
         val part = File(dir, item.sha256 + ".part")
         var have = if (part.exists()) part.length() else 0L
@@ -96,10 +96,7 @@ class MediaCache(filesDir: File, private val http: OkHttpClient, private val pre
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private fun mb(bytes: Long) = (bytes + 1_048_575) / 1_048_576
-
     private companion object {
         const val TAG = "MediaCache"
-        const val RESERVE_BYTES = 200L * 1024 * 1024 // keep some room for the system
     }
 }

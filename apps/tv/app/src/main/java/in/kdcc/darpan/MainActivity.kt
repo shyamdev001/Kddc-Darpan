@@ -7,6 +7,7 @@ import android.content.Intent
 import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Gravity
@@ -52,7 +53,11 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var prefs: Prefs
     private lateinit var api: Api
     private lateinit var cache: MediaCache
+    /** The manifest on screen (every file verified). */
     private lateinit var store: ManifestStore
+
+    /** A newer manifest whose files are still downloading (docs/AUDIT.md, OF1). */
+    private lateinit var stagedStore: ManifestStore
     private lateinit var plays: PlayLogStore
     private lateinit var updater: Updater
     private lateinit var playback: Playback
@@ -77,7 +82,16 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private var playUploads: Job? = null
     private var repair: Job? = null
     private var link: DeviceLink? = null
+    /** The newest manifest received (on screen or still downloading); sent in the heartbeat. */
     private var manifestVersion: String? = null
+
+    /** On screen: every file verified, or the first manifest this TV ever had. */
+    @Volatile private var active: Manifest? = null
+
+    /** Received, waiting for its files; goes on screen in one step when they are all here. */
+    @Volatile private var staged: Manifest? = null
+    private var stagedRaw: String? = null
+    private var stagedAt = 0L
     private var brightness: Int? = null // percent from the display hours; null = the TV's own
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -103,6 +117,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         cache = MediaCache(filesDir, api.http, prefs)
         // A saved copy only counts if it parses; otherwise the previous good one is used.
         store = ManifestStore(filesDir) { raw -> runCatching { api.parseManifest(raw) }.isSuccess }
+        stagedStore = ManifestStore(filesDir, "manifest.staged.json") { raw -> runCatching { api.parseManifest(raw) }.isSuccess }
         plays = PlayLogStore(filesDir, bootId())
         updater = Updater(this, api.http, prefs) { runOnUiThread { link?.sendHeartbeat() } }
         playback = Playback(
@@ -133,8 +148,11 @@ class MainActivity : Activity(), DeviceLink.Listener {
             has = { cache.has(it) },
             fetch = { cache.download(it) },
             cleanup = { cache.cleanup(it) },
-            onDone = { runOnUiThread { link?.sendHeartbeat() } },
+            onDone = { m, complete -> scope.launch { filesDone(m, complete) } },
             onAuthLost = { runOnUiThread { onUnauthorized() } },
+            // Never delete what is on screen while a newer manifest downloads (OF2).
+            keepAlso = { ManifestSwitch.keep(active, staged) },
+            freeBytes = { cache.dir.usableSpace },
         )
 
         findViewById<Button>(R.id.changeServer).setOnClickListener { showSetup(null) }
@@ -250,9 +268,20 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 // Offline first: put the last known content on screen before touching the network.
                 store.load()?.let { raw ->
                     try {
-                        applyManifest(forThisTv(api.parseManifest(raw)))
+                        val m = api.parseManifest(raw)
+                        active = m
+                        manifestVersion = m.version
+                        show(m)
                     } catch (e: Exception) {
                         Log.w(TAG, "Saved manifest unreadable", e)
+                    }
+                }
+                // One that was still downloading when the TV went off: carry on with it.
+                stagedStore.load()?.let { raw ->
+                    try {
+                        syncLock.withLock { offer(raw, api.parseManifest(raw)) }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Saved staged manifest unreadable", e)
                     }
                 }
                 goLive()
@@ -371,7 +400,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     /**
-     * Fetch the manifest and put it on screen; missing files download in the background.
+     * Fetch the manifest and hand it to [offer]; missing files download in the background.
      * The lock covers only the quick part, so a broadcast pushed meanwhile is never kept waiting
      * behind a long download. True if the fetch worked.
      */
@@ -379,14 +408,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         try {
             val raw = api.manifestRaw()
             val m = api.parseManifest(raw)
-            try {
-                withContext(Dispatchers.IO) { store.save(raw) }
-            } catch (e: IOException) {
-                Log.w(TAG, "Could not save the manifest; showing it anyway", e) // e.g. disk full
-            }
-            val shown = forThisTv(m)
-            applyManifest(shown)
-            downloader.want(shown)
+            offer(raw, m)
             link?.sendHeartbeat()
             scope.launch { updater.consider(m.app) } // may wait minutes; must not hold the sync lock
             return@withLock true
@@ -403,6 +425,63 @@ class MainActivity : Activity(), DeviceLink.Listener {
         false
     }
 
+    /**
+     * A manifest from the server, or the one saved while its files downloaded. It goes on screen in
+     * one step once every file is here; until then the current one keeps playing, minus any ad head
+     * office removed, with the new settings and any broadcast (see [ManifestSwitch]). Call with
+     * [syncLock] held.
+     */
+    private suspend fun offer(raw: String, m: Manifest) {
+        manifestVersion = m.version
+        if (staged == null) stagedAt = SystemClock.elapsedRealtime()
+        when (val d = ManifestSwitch.decide(active, m, { cache.has(it) }, SystemClock.elapsedRealtime() - stagedAt)) {
+            ManifestSwitch.Decision.Switch -> promote(raw, m)
+            is ManifestSwitch.Decision.Wait -> {
+                if (raw != stagedRaw) {
+                    staged = m
+                    stagedRaw = raw
+                    withContext(Dispatchers.IO) {
+                        try {
+                            stagedStore.save(raw)
+                        } catch (e: IOException) {
+                            Log.w(TAG, "Could not save the staged manifest", e) // e.g. disk full; fetched again later
+                        }
+                    }
+                }
+                show(d.play)
+            }
+        }
+        // The whole manifest, also in safe mode: stripping is for the screen, not for the files (OF2).
+        downloader.want(m)
+    }
+
+    /** [m] becomes the manifest on screen and the one the TV starts with. */
+    private suspend fun promote(raw: String, m: Manifest) {
+        active = m
+        staged = null
+        stagedRaw = null
+        withContext(Dispatchers.IO) {
+            try {
+                store.save(raw)
+            } catch (e: IOException) {
+                Log.w(TAG, "Could not save the manifest; showing it anyway", e) // e.g. disk full
+            }
+            stagedStore.clear()
+        }
+        show(m)
+    }
+
+    /** A download pass ended. When every file of the waiting manifest is here, it goes on screen now. */
+    private suspend fun filesDone(m: Manifest, complete: Boolean) {
+        syncLock.withLock {
+            val raw = stagedRaw
+            if (complete && raw != null && staged?.version == m.version) promote(raw, m)
+        }
+        link?.sendHeartbeat()
+    }
+
+    private fun show(m: Manifest) = applyManifest(forThisTv(m))
+
     private val crashes: CrashLog get() = (application as DarpanApp).crashes
 
     /** In safe mode (many crashes lately) only posters play; the saved manifest stays complete. */
@@ -411,7 +490,6 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private fun applyManifest(m: Manifest) {
         // The server's clock, even from a saved manifest, beats a TV clock reset by a power cut.
         m.generatedAt?.let { parseIso(it) }?.let { TrustedClock.serverTime(it) }
-        manifestVersion = m.version
         applyOrientation(m.settings.orientation == "PORTRAIT")
         brightness = m.settings.hours?.brightness
         Brightness.apply(this, brightness)
@@ -570,6 +648,10 @@ class MainActivity : Activity(), DeviceLink.Listener {
         broadcasts.stop()
         playback.stop()
         store.clear()
+        stagedStore.clear()
+        active = null
+        staged = null
+        stagedRaw = null
         manifestVersion = null
         prefs.clearDevice()
         begin()
