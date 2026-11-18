@@ -10,7 +10,7 @@ import {
   type OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { SkipThrottle } from '@nestjs/throttler';
-import { DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, KIOSK_STATES, type CommandAckPayload, type DeviceCommandPayload, type HeartbeatPayload } from '@darpan/shared';
+import { DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, KIOSK_STATES, ONLINE_WINDOW_MS, type CommandAckPayload, type DeviceCommandPayload, type HeartbeatPayload } from '@darpan/shared';
 import { bufferTime, filter, Subject, type Subscription } from 'rxjs';
 import type { Namespace, Socket } from 'socket.io';
 import { ContentEvents } from '../events/content-events';
@@ -34,6 +34,9 @@ const shortText = (v: unknown, max: number) => (typeof v === 'string' && v.lengt
 /** Manifests built at the same time when pushing a change. */
 const PUSH_CONCURRENCY = 6;
 
+/** How often screens that stopped checking in are marked offline (and open dashboards told). */
+const OFFLINE_SWEEP_MS = 15_000;
+
 /**
  * Live channel to the TVs. A TV connects with its device token, sends a heartbeat every 60 s,
  * and is told `manifest:updated` whenever what it should play changes.
@@ -45,6 +48,7 @@ const PUSH_CONCURRENCY = 6;
 export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DevicesGateway.name);
   private sub?: Subscription;
+  private sweeper?: NodeJS.Timeout;
 
   /** Command replies from TVs; CommandsService records them (kept here to avoid a circular dependency). */
   readonly acks = new Subject<{ screenId: string; commandId: string; ok: boolean; error?: string }>();
@@ -58,9 +62,13 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   ) {}
 
   async onModuleInit() {
-    // After a restart no TV is connected yet; each one marks itself ONLINE again as it reconnects
-    // (within seconds). Without this a TV switched off while the server was down would stay "online".
-    await this.prisma.screen.updateMany({ where: { status: 'ONLINE' }, data: { status: 'OFFLINE' } });
+    // A screen goes offline only after 3 missed heartbeats (ONLINE_WINDOW_MS), never on a dropped
+    // connection alone: a few seconds of lost WiFi must not flip it (docs: AUDIT.md, OF12). The sweep
+    // also covers a restart: TVs that reconnect within the window never show offline, and one
+    // switched off while the server was down is marked offline once its window has passed.
+    await this.sweepStale();
+    this.sweeper = setInterval(() => void this.sweepStale().catch((err: Error) => this.logger.error('Offline sweep failed', err)), OFFLINE_SWEEP_MS);
+    this.sweeper.unref();
 
     // Collect changes for 2 s, so saving a playlist with 30 edits sends one update, not 30.
     this.sub = this.events.changes
@@ -77,6 +85,25 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
 
   onModuleDestroy() {
     this.sub?.unsubscribe();
+    if (this.sweeper) clearInterval(this.sweeper);
+  }
+
+  /** Marks offline the screens not heard from within the window, and tells open dashboards. */
+  async sweepStale(now = Date.now()): Promise<string[]> {
+    const cutoff = new Date(now - ONLINE_WINDOW_MS);
+    const stale = await this.prisma.screen.findMany({
+      where: { status: 'ONLINE', OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: cutoff } }] },
+      select: { id: true },
+    });
+    if (!stale.length) return [];
+    const ids = stale.map((s) => s.id);
+    // Only those still stale: a heartbeat between the two queries keeps its screen online.
+    await this.prisma.screen.updateMany({
+      where: { id: { in: ids }, status: 'ONLINE', OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: cutoff } }] },
+      data: { status: 'OFFLINE' },
+    });
+    for (const id of ids) this.events.screenUpdated(id);
+    return ids;
   }
 
   /**
@@ -117,15 +144,11 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     this.logger.log(`Screen ${(socket.data as DeviceData).screenId} connected`);
   }
 
-  async handleDisconnect(socket: Socket) {
+  handleDisconnect(socket: Socket) {
+    // Not marked offline here: a short network drop reconnects within seconds. The sweep marks it
+    // offline once it has missed 3 heartbeats.
     const screenId = (socket.data as Partial<DeviceData>).screenId;
-    if (!screenId) return;
-    // Another connection from the same TV may still be open (reconnect race); only mark offline if none is.
-    const still = await this.ns.in(room(screenId)).fetchSockets();
-    if (still.length === 0) {
-      await this.prisma.screen.updateMany({ where: { id: screenId, status: 'ONLINE' }, data: { status: 'OFFLINE' } });
-      this.events.screenUpdated(screenId);
-    }
+    if (screenId) this.logger.log(`Screen ${screenId} disconnected`);
   }
 
   @SubscribeMessage('heartbeat')

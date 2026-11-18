@@ -2,8 +2,9 @@
 import './env';
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { DASHBOARD_NAMESPACE, DASHBOARD_SOCKET_PATH, DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, filesProblem, SCREENS_CHANGED_EVENT, type ScreensChangedPayload } from '@darpan/shared';
+import { DASHBOARD_NAMESPACE, DASHBOARD_SOCKET_PATH, DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, filesProblem, ONLINE_WINDOW_MS, SCREENS_CHANGED_EVENT, type ScreensChangedPayload } from '@darpan/shared';
 import { io, type Socket } from 'socket.io-client';
+import { DevicesGateway } from '../src/screens/devices.gateway';
 import { call, createPlaces, createUser, login, pairedTv, resetDb, startApp, type TestApp } from './helpers';
 
 let t: TestApp;
@@ -36,8 +37,8 @@ function dashboard(cookie?: string): Socket {
   return s;
 }
 
-function tvSocket(token: string): Socket {
-  const s = io(origin + DEVICE_NAMESPACE, { auth: { token }, transports: ['websocket'], reconnection: false });
+function tvSocket(token: string, transports: string[] = ['websocket']): Socket {
+  const s = io(origin + DEVICE_NAMESPACE, { auth: { token }, transports, reconnection: false });
   open.push(s);
   return s;
 }
@@ -72,7 +73,7 @@ describe('live dashboard updates', () => {
     await assert.rejects(connected(dashboard('darpan_session=made-up')), /unauthorized/);
   });
 
-  it('tells the dashboard at once when a TV connects and when it goes away, and online follows', async () => {
+  it('tells the dashboard when a TV connects, and when it has missed 3 heartbeats; a short drop does not flip it', async () => {
     const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Live update TV');
     // Paired but never connected: as if the server had restarted since.
     await t.prisma.screen.update({ where: { id: tv.deviceId }, data: { status: 'OFFLINE' } });
@@ -87,13 +88,35 @@ describe('live dashboard updates', () => {
     await cameOnline;
     assert.equal(await onlineInList(tv.deviceId), true);
 
-    // Let the batch with the connect go out first, so the next update can only be the disconnect.
-    await new Promise((r) => setTimeout(r, 800));
-    const wentAway = updateFor(dash, tv.deviceId);
+    // A dropped connection alone does not flip it: a WiFi blip reconnects within seconds (OF12).
     device.disconnect();
+    await new Promise((r) => setTimeout(r, 800));
+    assert.equal(await onlineInList(tv.deviceId), true);
+
+    // 3 heartbeats missed: offline, and open dashboards are told.
+    await new Promise((r) => setTimeout(r, 1_500)); // the connect's update has gone out
+    const wentAway = updateFor(dash, tv.deviceId);
+    await t.prisma.screen.update({ where: { id: tv.deviceId }, data: { lastSeenAt: new Date(Date.now() - ONLINE_WINDOW_MS - 1_000) } });
+    assert.ok((await t.app.get(DevicesGateway).sweepStale()).includes(tv.deviceId));
     await wentAway;
-    // A switched-off TV shows offline right away, not after the 3-minute window.
     assert.equal(await onlineInList(tv.deviceId), false);
+
+    // Back: online at once.
+    const back = updateFor(dash, tv.deviceId);
+    await connected(tvSocket(tv.deviceToken));
+    await back;
+    assert.equal(await onlineInList(tv.deviceId), true);
+    assert.ok(!(await t.app.get(DevicesGateway).sweepStale()).includes(tv.deviceId), 'a screen heard from just now stays online');
+  });
+
+  it('works through a proxy that blocks WebSockets: the TV falls back to long-polling (OF6)', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Proxy TV');
+    const device = tvSocket(tv.deviceToken, ['polling']);
+    await connected(device);
+    const reply = await device.timeout(5_000).emitWithAck('heartbeat', { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0', adbEnabled: true });
+    assert.deepEqual(reply, { ok: true });
+    assert.equal(await onlineInList(tv.deviceId), true);
+    assert.equal((await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body.adbEnabled, true);
   });
 
   it('tells a TV the exact server time, so broadcasts stay in step across screens', async () => {
