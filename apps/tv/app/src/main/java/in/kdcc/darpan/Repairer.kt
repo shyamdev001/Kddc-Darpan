@@ -30,7 +30,7 @@ class Repairer(
 
     /** Returns once the TV can talk to the server again, one way or the other. */
     suspend fun run(): Outcome {
-        var backoff = pollMs
+        val backoff = Backoff(pollMs, maxBackoffMs)
         while (true) {
             try {
                 if (oldKeyWorks()) {
@@ -51,17 +51,15 @@ class Repairer(
                     return Outcome.NEW_KEY_PAIRED
                 }
                 showCode(s.pairingCode)
-                backoff = pollMs
+                backoff.reset()
                 delay(pollMs)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ApiException) {
                 if (e.code == 401) dropPending() // the server forgot the new key too: ask again
-                delay(backoff)
-                backoff = (backoff * 2).coerceAtMost(maxBackoffMs)
+                delay(backoff.next())
             } catch (e: Exception) {
-                delay(backoff) // no network: keep playing, try again later
-                backoff = (backoff * 2).coerceAtMost(maxBackoffMs)
+                delay(backoff.next()) // no network: keep playing, try again later
             }
         }
     }

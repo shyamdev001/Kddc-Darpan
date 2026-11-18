@@ -296,7 +296,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         broadcasts.stop()
         playback.stop()
         showPairing(null, getString(R.string.pair_waiting))
-        var backoff = 5_000L
+        val backoff = Backoff(5_000, 60_000)
         while (scope.isActive) {
             try {
                 if (prefs.deviceToken == null) {
@@ -311,7 +311,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
                     return
                 }
                 showPairing(s.pairingCode, null)
-                backoff = 5_000L
+                backoff.reset()
                 delay(5_000)
             } catch (e: CancellationException) {
                 throw e
@@ -321,12 +321,10 @@ class MainActivity : Activity(), DeviceLink.Listener {
                     continue
                 }
                 showPairing(null, "The server replied with an error (${e.code}). Retrying…")
-                delay(backoff)
-                backoff = (backoff * 2).coerceAtMost(60_000)
+                delay(backoff.next())
             } catch (e: Exception) {
                 showPairing(null, "Cannot reach ${prefs.serverUrl}. Retrying…")
-                delay(backoff)
-                backoff = (backoff * 2).coerceAtMost(60_000)
+                delay(backoff.next())
             }
         }
     }

@@ -8,6 +8,7 @@ import io.socket.client.Ack
 import io.socket.client.IO
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
+import io.socket.engineio.client.transports.Polling
 import io.socket.engineio.client.transports.WebSocket
 import org.json.JSONObject
 import java.net.URI
@@ -36,6 +37,9 @@ class DeviceLink(
     }
 
     private val main = Handler(Looper.getMainLooper())
+
+    /** Our own retries after a refused handshake: growing, spread at random (OF5). */
+    private val retryBackoff = Backoff(RETRY_MS, RETRY_MAX_MS)
     private var socket: Socket? = null
     private var closed = false
 
@@ -56,15 +60,19 @@ class DeviceLink(
     fun connect() {
         val options = IO.Options.builder()
             .setAuth(mapOf("token" to token))
-            .setTransports(arrayOf(WebSocket.NAME))
+            // Long-polling first, then upgraded to a WebSocket where the network allows it: a bank
+            // proxy that blocks WebSockets still gets a working link and heartbeats (OF6).
+            .setTransports(arrayOf(Polling.NAME, WebSocket.NAME))
             .setReconnection(true)
             .setReconnectionDelay(2_000)
             .setReconnectionDelayMax(60_000)
+            .setRandomizationFactor(0.5) // each wait ± 50 %, so TVs spread out after a server restart
             .build()
         val s = IO.socket(URI.create(serverUrl.trimEnd('/') + "/devices"), options)
 
         s.on(Socket.EVENT_CONNECT, Emitter.Listener {
             main.post {
+                retryBackoff.reset()
                 sendHeartbeat()
                 // A burst of time checks right away, so screens are in step from the start.
                 timeBurst()
@@ -98,7 +106,7 @@ class DeviceLink(
                     // Errors from the server's handshake are not retried by the library; retry ourselves.
                     // One retry waiting at a time: a long outage must not pile up parallel attempts.
                     main.removeCallbacks(retry)
-                    main.postDelayed(retry, RETRY_MS)
+                    main.postDelayed(retry, retryBackoff.next())
                 }
             }
         })
@@ -177,6 +185,7 @@ class DeviceLink(
         const val TAG = "DeviceLink"
         const val HEARTBEAT_MS = 60_000L
         const val RETRY_MS = 30_000L
+        const val RETRY_MAX_MS = 5 * 60_000L
         const val TIME_BURST = 8
         const val TIME_EVERY_MS = 5 * 60_000L
     }
