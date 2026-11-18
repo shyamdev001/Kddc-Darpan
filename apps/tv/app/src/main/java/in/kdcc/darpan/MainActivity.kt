@@ -82,6 +82,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private var playUploads: Job? = null
     private var repair: Job? = null
     private var link: DeviceLink? = null
+    private var network: NetworkWatch? = null
+    private var networkBack: Job? = null
     /** The newest manifest received (on screen or still downloading); sent in the heartbeat. */
     private var manifestVersion: String? = null
 
@@ -335,6 +337,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         stopLive()
         val token = prefs.deviceToken ?: return begin()
         link = DeviceLink(prefs.serverUrl, token, this).also { it.connect() }
+        network = NetworkWatch(this) { runOnUiThread { onNetworkBack() } }.also { it.start() }
         // The socket pushes changes; this is the safety net if a push is missed.
         periodic = scope.launch {
             while (isActive) {
@@ -385,7 +388,24 @@ class MainActivity : Activity(), DeviceLink.Listener {
         appVersion = BuildConfig.VERSION_NAME,
     )
 
+    /**
+     * Cable or WiFi back (OF7): reconnect and sync now, after a random 0-10 s so a branch's TVs, or
+     * the whole bank after an outage, do not all call the server in the same second.
+     */
+    private fun onNetworkBack() {
+        if (networkBack?.isActive == true) return
+        networkBack = scope.launch {
+            delay(kotlin.random.Random.nextLong(10_000))
+            link?.networkBack()
+            sync() // also restarts any download that failed while the network was down
+        }
+    }
+
     private fun stopLive() {
+        network?.stop()
+        network = null
+        networkBack?.cancel()
+        networkBack = null
         repair?.cancel()
         repair = null
         showRepairCode(null)

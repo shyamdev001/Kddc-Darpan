@@ -128,6 +128,19 @@ class DeviceLink(
         socket?.let { if (!it.connected()) it.connect() }
     }
 
+    /**
+     * The network is back (OF7): try now, not after the wait already running (the library's own,
+     * up to ~90 s, or ours after a refused handshake, up to 7.5 min).
+     */
+    fun networkBack() {
+        val s = socket ?: return
+        if (closed || s.connected()) return
+        main.removeCallbacks(retry)
+        retryBackoff.reset()
+        s.disconnect() // ends the waiting reconnect; connect() alone is ignored while it waits
+        s.connect()
+    }
+
     fun sendHeartbeat() {
         val s = socket ?: return
         if (!s.connected()) return
