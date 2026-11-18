@@ -25,6 +25,12 @@ export class ScreensController {
     return this.screens.live(user);
   }
 
+  /** Models, Android versions and what they can do, counted. Before screens/:id. */
+  @Get('screens/fleet')
+  fleet(@CurrentUser() user: AuthUser) {
+    return this.screens.fleet(user);
+  }
+
   @Get('screens/:id')
   get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
     return this.screens.detail(id, user);

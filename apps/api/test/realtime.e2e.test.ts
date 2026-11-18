@@ -402,6 +402,42 @@ describe('what each TV can do', () => {
   });
 });
 
+describe('the fleet page (DC6)', () => {
+  it('counts only the screens in the area the user may see', async () => {
+    const tv = await pairedTv(t.base, admin, places.nadiadStation.id, 'Station TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    await device.timeout(3_000).emitWithAck('heartbeat', {
+      currentMediaId: null,
+      storageFreeBytes: 1,
+      ramFreeBytes: 1,
+      appVersion: '0.9.0',
+      capabilities: {
+        sdk: 28, webView: null, h264_1080p: false, hevc: false, deviceOwner: true, brightness: null,
+        network: { type: 'ethernet', wifiDbm: null }, screenOff: null, videoInScreenshot: null,
+        device: { brand: 'Acme', manufacturer: 'Acme', model: 'Box 1', chipset: null, os: 'Android 9 (API 28)' },
+      },
+    });
+
+    const viewer = await login(t.base, await createUser(t.prisma, 'BRANCH_VIEWER', { branchId: places.nadiadStation.id }));
+    const mine = await call(t.base, 'GET', '/screens/fleet', { cookie: viewer });
+    assert.equal(mine.status, 200, JSON.stringify(mine.body));
+    assert.equal(mine.body.screens, 1);
+    assert.equal(mine.body.reported, 1);
+    assert.deepEqual(mine.body.models, [{ label: 'Acme Box 1', screens: 1, online: 1 }]);
+    assert.equal(mine.body.lowestSdk, 28);
+    assert.deepEqual(mine.body.videos, { yes: 0, no: 1, unknown: 0 });
+    assert.equal(mine.body.attention[0].name, 'Station TV');
+    assert.equal(mine.body.attention[0].branch, 'Nadiad Station');
+
+    const all = (await call(t.base, 'GET', '/screens/fleet', { cookie: admin })).body;
+    assert.ok(all.screens > 1, 'head office sees every screen');
+    const other = await login(t.base, await createUser(t.prisma, 'BRANCH_VIEWER', { branchId: places.nadiadMain.id }));
+    assert.equal((await call(t.base, 'GET', '/screens/fleet', { cookie: other })).body.screens, 0);
+    assert.equal((await call(t.base, 'GET', '/screens/fleet')).status, 401);
+  });
+});
+
 describe('"Test screen off"', () => {
   it('reaches the TV, and its answer (with the reason) shows in the command list and as a capability', async () => {
     const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Night TV');

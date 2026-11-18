@@ -85,6 +85,54 @@ export interface ScreenSummary {
   nowPlaying: { id: string; displayName: string } | null;
 }
 
+/** How many screens said yes, no, or have not said (app too old, or never tried). */
+export interface FleetTally {
+  yes: number;
+  no: number;
+  unknown: number;
+}
+
+/** A group of screens sharing one value (an Android version, a model...), most common first. */
+export interface FleetGroup {
+  label: string;
+  screens: number;
+  online: number;
+}
+
+export interface FleetScreenRef {
+  id: string;
+  name: string;
+  branch: string | null;
+  /** what is wrong, in plain words */
+  note: string;
+}
+
+/**
+ * What the screens in the user's area are, and what they can do (docs/AUDIT.md, DC6): the answer
+ * to "can we raise the Android minimum?" and "which TVs cannot play our videos?" in one place.
+ */
+export interface FleetSummary {
+  screens: number;
+  /** screens whose app has sent the full report (make, decoders...) */
+  reported: number;
+  android: FleetGroup[];
+  /** lowest Android API level any screen reports; null when none has */
+  lowestSdk: number | null;
+  /** screens that have never said which Android they run */
+  androidUnknown: number;
+  models: FleetGroup[];
+  platforms: FleetGroup[];
+  appVersions: FleetGroup[];
+  videos: FleetTally;
+  portraitVideos: FleetTally;
+  youtube: FleetTally;
+  kiosk: FleetTally;
+  brightness: FleetTally;
+  screenOff: FleetTally;
+  /** screens that need a look: cannot play our videos, or skip some */
+  attention: FleetScreenRef[];
+}
+
 export interface ScreenListResponse {
   items: ScreenSummary[];
   /** TVs showing a pairing code that nobody has claimed yet */

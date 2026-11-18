@@ -7,6 +7,7 @@ import {
   PAIRING_CODE_TTL_MS,
   type BranchOption,
   type DeviceStatusResponse,
+  type FleetSummary,
   type KioskState,
   type LiveWallResponse,
   type RegisterDeviceResponse,
@@ -22,6 +23,7 @@ import { Prisma } from '../generated/prisma/client';
 import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { isOnline } from './online';
+import { fleetSummary } from './fleet';
 import { newDeviceToken, newPairingCode } from './device-auth';
 import { CommandsService } from './commands.service';
 import { DevicesGateway } from './devices.gateway';
@@ -225,6 +227,27 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
     ]);
     const playlists = await this.resolver.resolveMany(rows);
     return { items: rows.map((r) => this.toSummary(r, playlists.get(r.id) ?? null)), waitingToPair };
+  }
+
+  /** What the screens in the user's area are and can do, counted (DC6). Same screens as the list. */
+  async fleet(user: AuthUser): Promise<FleetSummary> {
+    const now = Date.now();
+    const rows = await this.prisma.screen.findMany({
+      where: { NOT: { status: 'PENDING', name: null }, ...screenScope(user) },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        lastSeenAt: true,
+        model: true,
+        osVersion: true,
+        appVersion: true,
+        capabilities: true,
+        unplayable: true,
+        branch: { select: { name: true } },
+      },
+    });
+    return fleetSummary(rows.map((r) => ({ ...r, online: isOnline(r, now), branch: r.branch?.name ?? null })));
   }
 
   /**
