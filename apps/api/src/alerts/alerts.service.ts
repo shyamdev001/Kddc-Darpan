@@ -10,12 +10,30 @@ import type { UpdateAlertSettingsDto } from './alert.dto';
 
 const CHECK_EVERY_MS = 60_000;
 const RECENT_DAYS = 7;
+/** An alert closes only once its screen has stayed back this long (docs/AUDIT.md, OF13). */
+export const STEADY_BACK_MS = 10 * 60_000;
+/** At most one "offline" email per screen in this time; a later drop waits for it to pass. */
+export const EMAIL_GAP_MS = 60 * 60_000;
 
 const IST_TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true });
 const IST_DAY_TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
 const IST_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }); // yyyy-mm-dd
 
 const alertInclude = { screen: { select: { id: true, name: true, branch: { select: { name: true } } } } } as const;
+
+const NO_BRANCH = 'No branch';
+
+interface Line {
+  name: string;
+  branch: string;
+}
+
+/** Lines grouped by branch, branches in alphabetical order. */
+function byBranch<T extends Line>(lines: T[]): [string, T[]][] {
+  const groups = new Map<string, T[]>();
+  for (const l of lines) groups.set(l.branch, [...(groups.get(l.branch) ?? []), l]);
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
 
 function duration(ms: number): string {
   const m = Math.max(1, Math.round(ms / 60_000));
@@ -159,24 +177,50 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
     const hours = await this.resolver.hoursMany(screens);
     const shouldBeOn = (id: string) => hoursOn(hours.get(id)?.hours ?? settings.window, now);
 
-    const toNotify: { alertId: string; name: string; branch: string | null; lastSeen: Date }[] = [];
-    const recovered: { name: string; branch: string | null; offlineMs: number }[] = [];
+    let toNotify: (Line & { alertId: string; screenId: string; lastSeen: Date })[] = [];
+    const recovered: (Line & { offlineMs: number })[] = [];
+    // Per branch: its screens, and how many are offline now (for "2 of 3 screens offline").
+    const branches = new Map<string, { total: number; offline: number }>();
+    const branchOf = (s: (typeof screens)[number]) => s.branch?.name ?? NO_BRANCH;
 
     for (const s of screens) {
       const lastSeen = s.lastSeenAt ?? s.pairedAt ?? s.createdAt;
       const offline = lastSeen.getTime() < cutoff;
       const alert = open.get(s.id);
       const name = s.name ?? 'Unnamed screen';
+      const b = branches.get(branchOf(s)) ?? { total: 0, offline: 0 };
+      b.total++;
+      if (offline) b.offline++;
+      branches.set(branchOf(s), b);
 
       if (offline) {
-        const a = alert ?? (await this.prisma.screenAlert.create({ data: { screenId: s.id, offlineSince: lastSeen } }));
+        let a = alert ?? (await this.prisma.screenAlert.create({ data: { screenId: s.id, offlineSince: lastSeen } }));
+        // Dropped again before it was steady: the same outage goes on, no new email.
+        if (a.backSince) a = await this.prisma.screenAlert.update({ where: { id: a.id }, data: { backSince: null } });
         if (!a.notifiedAt && settings.enabled && shouldBeOn(s.id)) {
-          toNotify.push({ alertId: a.id, name, branch: s.branch?.name ?? null, lastSeen });
+          toNotify.push({ alertId: a.id, screenId: s.id, name, branch: branchOf(s), lastSeen });
         }
       } else if (alert) {
-        await this.prisma.screenAlert.update({ where: { id: alert.id }, data: { resolvedAt: now } });
-        if (alert.notifiedAt) recovered.push({ name, branch: s.branch?.name ?? null, offlineMs: now.getTime() - alert.offlineSince.getTime() });
+        if (!alert.notifiedAt) {
+          // Nobody was told: nothing to wait for.
+          await this.prisma.screenAlert.update({ where: { id: alert.id }, data: { resolvedAt: now, backSince: null } });
+        } else if (!alert.backSince) {
+          await this.prisma.screenAlert.update({ where: { id: alert.id }, data: { backSince: now } });
+        } else if (now.getTime() - alert.backSince.getTime() >= STEADY_BACK_MS) {
+          await this.prisma.screenAlert.update({ where: { id: alert.id }, data: { resolvedAt: alert.backSince } });
+          recovered.push({ name, branch: branchOf(s), offlineMs: alert.backSince.getTime() - alert.offlineSince.getTime() });
+        }
       }
+    }
+
+    // A screen emailed about in the last hour waits: a TV that keeps dropping is one email an hour.
+    if (toNotify.length) {
+      const recent = await this.prisma.screenAlert.findMany({
+        where: { screenId: { in: toNotify.map((n) => n.screenId) }, notifiedAt: { gt: new Date(now.getTime() - EMAIL_GAP_MS) } },
+        select: { screenId: true },
+      });
+      const wait = new Set(recent.map((r) => r.screenId));
+      toNotify = toNotify.filter((n) => !wait.has(n.screenId));
     }
 
     if (!toNotify.length && !recovered.length) return;
@@ -187,7 +231,7 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
     if (!settings.enabled || !settings.recipients.length) return;
 
     try {
-      await this.mail.send({ to: settings.recipients, ...this.digest(toNotify, recovered, screens.length, now) });
+      await this.mail.send({ to: settings.recipients, ...this.digest(toNotify, recovered, screens.length, branches, now) });
     } catch (err) {
       // Not sent: mark these alerts un-emailed again, so the next check (a minute later) retries them.
       if (toNotify.length) {
@@ -197,13 +241,14 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** One email for the whole check, listed by branch: a branch whose internet is down is one heading. */
   private digest(
-    offline: { name: string; branch: string | null; lastSeen: Date }[],
-    back: { name: string; branch: string | null; offlineMs: number }[],
+    offline: (Line & { lastSeen: Date })[],
+    back: (Line & { offlineMs: number })[],
     total: number,
+    branches: Map<string, { total: number; offline: number }>,
     now: Date,
   ): { subject: string; text: string } {
-    const where = (n: { name: string; branch: string | null }) => (n.branch ? `${n.name} (${n.branch})` : n.name);
     const today = IST_DATE.format(now);
     const parts: string[] = [];
     if (offline.length) parts.push(`${offline.length} screen${offline.length === 1 ? '' : 's'} offline`);
@@ -215,15 +260,22 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
     if (mass) lines.push(`${offline.length} of ${total} screens went quiet together. Check the server and its internet connection first.`, '');
     if (offline.length) {
       lines.push('Not checking in:');
-      for (const n of offline) {
-        const fmt = IST_DATE.format(n.lastSeen) === today ? IST_TIME : IST_DAY_TIME;
-        lines.push(`  - ${where(n)}, last heard ${fmt.format(n.lastSeen)}`);
+      for (const [branch, list] of byBranch(offline)) {
+        const b = branches.get(branch);
+        lines.push(b ? `  ${branch}: ${b.offline} of ${b.total} screen${b.total === 1 ? '' : 's'} offline` : `  ${branch}`);
+        for (const n of list) {
+          const fmt = IST_DATE.format(n.lastSeen) === today ? IST_TIME : IST_DAY_TIME;
+          lines.push(`    - ${n.name}, last heard ${fmt.format(n.lastSeen)}`);
+        }
       }
       lines.push('');
     }
     if (back.length) {
       lines.push('Back online:');
-      for (const n of back) lines.push(`  - ${where(n)}, was offline ${duration(n.offlineMs)}`);
+      for (const [branch, list] of byBranch(back)) {
+        lines.push(`  ${branch}`);
+        for (const n of list) lines.push(`    - ${n.name}, was offline ${duration(n.offlineMs)}`);
+      }
       lines.push('');
     }
     lines.push(`See all alerts: ${this.link()}`);

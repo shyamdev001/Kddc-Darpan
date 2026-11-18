@@ -153,4 +153,53 @@ describe('alert emails over SMTP', () => {
     assert.equal(smtp.received.length, 1);
     assert.match(smtp.received[0].data, /Retry TV/);
   });
+
+  it('a TV that keeps dropping sends one email an hour, "back" only after 10 steady minutes, listed by branch (OF13)', async () => {
+    await t.prisma.screenAlert.deleteMany();
+    await t.prisma.screen.deleteMany();
+    const alerts = t.app.get(AlertsService);
+    const start = Date.now();
+    const at = (min: number) => new Date(start + min * 60_000);
+    const seen = (id: string, min: number) => t.prisma.screen.update({ where: { id }, data: { status: 'ONLINE', lastSeenAt: at(min) } });
+    const silent = (id: string) => t.prisma.screen.update({ where: { id }, data: { status: 'OFFLINE', lastSeenAt: at(-60) } });
+    // Quoted-printable soft line breaks would split long lines.
+    const text = (i: number) => smtp.received[i].data.replace(/=\r\n/g, '');
+
+    const lobby = await offlineScreen('Lobby TV');
+    await offlineScreen('Cash counter TV');
+    await alerts.check(at(0), true);
+    assert.equal(smtp.received.length, 1);
+    assert.match(text(0), /Matar: 2 of 2 screens offline/);
+    assert.match(text(0), /- Lobby TV, last heard/);
+    assert.match(text(0), /- Cash counter TV, last heard/);
+
+    // Back for a few minutes, then gone again: the same outage, no email either way.
+    await seen(lobby.id, 1);
+    await alerts.check(at(1), true);
+    await seen(lobby.id, 4);
+    await alerts.check(at(4), true);
+    await silent(lobby.id);
+    await alerts.check(at(6), true);
+    assert.equal(smtp.received.length, 1);
+    assert.equal(await t.prisma.screenAlert.count({ where: { screenId: lobby.id } }), 1);
+
+    // Back and steady for 10 minutes: one "back online" email, timed from when it came back.
+    for (const m of [7, 12, 17]) {
+      await seen(lobby.id, m);
+      await alerts.check(at(m), true);
+    }
+    assert.equal(smtp.received.length, 2);
+    assert.match(text(1), /Back online:\r?\n {2}Matar\r?\n {4}- Lobby TV, was offline/);
+    const closed = await t.prisma.screenAlert.findFirst({ where: { screenId: lobby.id, resolvedAt: { not: null } } });
+    assert.equal(closed?.resolvedAt?.getTime(), at(7).getTime());
+
+    // Drops again within the hour of the first email: it waits for the hour to pass.
+    await silent(lobby.id);
+    await alerts.check(at(25), true);
+    assert.equal(smtp.received.length, 2, 'no second "offline" email inside the hour');
+    await alerts.check(at(61), true);
+    assert.equal(smtp.received.length, 3);
+    assert.match(text(2), /- Lobby TV, last heard/);
+    assert.doesNotMatch(text(2), /Cash counter TV/, 'already reported, still the same outage');
+  });
 });

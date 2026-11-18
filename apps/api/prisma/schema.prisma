@@ -466,6 +466,8 @@ model ScreenAlert {
   offlineSince DateTime
   /// When the email went out; null while outside the hours the screen should be on.
   notifiedAt   DateTime?
+  /// Seen again since; the alert closes once the screen has stayed back 10 minutes.
+  backSince    DateTime?
   resolvedAt   DateTime?
   createdAt    DateTime  @default(now())
 
