@@ -61,12 +61,14 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
           ${rows.map((r) => r.mediaId)}::uuid[],
           ${rows.map((r) => new Date(r.startedAt).toISOString())}::timestamptz[],
           ${rows.map((r) => r.durationMs)}::int[],
-          ${rows.map((r) => r.clockUncertain === true)}::boolean[]
-        ) AS t("mediaId", "startedAt", "durationMs", "clockUncertain")
+          ${rows.map((r) => r.clockUncertain === true)}::boolean[],
+          ${rows.map((r) => r.playId ?? null)}::uuid[]
+        ) AS t("mediaId", "startedAt", "durationMs", "clockUncertain", "playId")
       ), ins AS (
-        INSERT INTO "PlayLog" ("screenId", "mediaId", "startedAt", "durationMs", "clockUncertain")
-        SELECT ${screenId}::uuid, "mediaId", "startedAt" AT TIME ZONE 'UTC', "durationMs", "clockUncertain" FROM input
-        ON CONFLICT ("screenId", "mediaId", "startedAt") DO NOTHING
+        INSERT INTO "PlayLog" ("screenId", "mediaId", "startedAt", "durationMs", "clockUncertain", "playId")
+        SELECT ${screenId}::uuid, "mediaId", "startedAt" AT TIME ZONE 'UTC', "durationMs", "clockUncertain", "playId" FROM input
+        -- Either key: the same screen, ad and start, or the same play id (a resend with a corrected time).
+        ON CONFLICT DO NOTHING
         RETURNING "mediaId", "startedAt", "durationMs", "clockUncertain"
       ), daily AS (
         INSERT INTO "PlayDaily" ("day", "screenId", "mediaId", "screenName", "branchName", "mediaName", "plays", "durationMs", "uncertainPlays", "updatedAt")

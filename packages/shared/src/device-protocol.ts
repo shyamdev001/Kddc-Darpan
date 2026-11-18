@@ -241,6 +241,10 @@ export interface PlayLogEntry {
   mediaId: string;
   startedAt: string; // ISO 8601 UTC
   durationMs: number;
+  /** The TV's clock was not set: startedAt is its best guess. */
+  clockUncertain?: boolean;
+  /** Made by the TV for each play (UUID), so a resend counts once even with a corrected time. */
+  playId?: string;
 }
 
 export interface PlayLogBatch {

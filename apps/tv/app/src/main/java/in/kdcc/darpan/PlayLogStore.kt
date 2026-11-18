@@ -8,6 +8,7 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 
 /**
  * Proof of play: one line per item shown, kept in a file until the server has it, so plays made
@@ -63,6 +64,8 @@ class PlayLogStore(
         if (!o.optBoolean("clockUncertain", false)) return line
         val fixed = if (certain) restamp(o.optLong("elapsedAt", -1), o.optString("boot"), bootId, nowMs, nowElapsed) else null
         val out = JSONObject().put("mediaId", o.optString("mediaId")).put("durationMs", o.optLong("durationMs"))
+        // Same id whatever time it goes with, so a resend with the corrected time counts once (OF11).
+        o.optString("playId").takeIf { it.isNotEmpty() }?.let { out.put("playId", it) }
         return if (fixed != null) {
             out.put("startedAt", iso.format(fixed)).toString()
         } else {
@@ -86,6 +89,7 @@ class PlayLogStore(
             .put("mediaId", id)
             .put("startedAt", iso.format(openWall))
             .put("durationMs", ms.coerceAtMost(MAX_MS))
+            .put("playId", UUID.randomUUID().toString()) // the server counts each id once (OF11)
         // Kept only on the TV, to put the right time on it later (see pending).
         if (openUncertain) o.put("clockUncertain", true).put("elapsedAt", openElapsed).put("boot", bootId)
         val line = o.toString()

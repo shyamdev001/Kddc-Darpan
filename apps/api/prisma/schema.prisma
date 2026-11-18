@@ -371,11 +371,14 @@ model PlayLog {
   receivedAt DateTime @default(now())
   // The TV's clock was not set when it played this (power cut, no internet), so startedAt may be off.
   clockUncertain Boolean @default(false)
+  /// Made by the TV for each play: a re-sent play counts once, even with a corrected time. Null from older apps.
+  playId     String?  @db.Uuid
 
   screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
   media  Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
 
   @@unique([screenId, mediaId, startedAt]) // de-duplicate re-sent batches
+  @@unique([screenId, playId])
   @@index([startedAt])
 }
 

@@ -18,6 +18,11 @@ export class PlayLogEntryDto {
   @IsOptional()
   @IsBoolean()
   clockUncertain?: boolean;
+
+  /** The TV's own id for this play (newer apps): a resend counts once, whatever its time says. */
+  @IsOptional()
+  @IsUUID()
+  playId?: string;
 }
 
 export class PlayLogBatchDto {
