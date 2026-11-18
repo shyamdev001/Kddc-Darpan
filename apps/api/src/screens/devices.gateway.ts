@@ -24,6 +24,8 @@ import { ManifestService } from './manifest.service';
 
 interface DeviceData {
   screenId: string;
+  /** Set once this connection's first heartbeat has been checked against the current manifest. */
+  manifestChecked?: boolean;
 }
 
 const room = (screenId: string) => `screen:${screenId}`;
@@ -204,7 +206,26 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     // A heartbeat proves the connection is up, even if a reconnect race marked the screen offline.
     await this.prisma.screen.updateMany({ where: { id: screenId, status: 'OFFLINE' }, data: { status: 'ONLINE' } });
     this.events.screenUpdated(screenId);
+    const data = socket.data as Partial<DeviceData>;
+    if (!data.manifestChecked) {
+      data.manifestChecked = true;
+      void this.catchUp(socket, screenId, typeof body.manifestVersion === 'string' ? body.manifestVersion : null);
+    }
     return { ok: true };
+  }
+
+  /**
+   * First heartbeat after a (re)connect: if head office changed something while this TV was away, it
+   * hears about it now, not at its next 10-minute sync (docs/AUDIT.md, OF9). Once per connection, so
+   * regular heartbeats never build manifests.
+   */
+  private async catchUp(socket: Socket, screenId: string, tvVersion: string | null) {
+    try {
+      const { version } = await this.manifests.forDevice(screenId);
+      if (version !== tvVersion) socket.emit('manifest:updated', { version });
+    } catch (err) {
+      this.logger.warn(`Manifest check for screen ${screenId} failed: ${(err as Error).message}`);
+    }
   }
 
   /** The exact server time, answered at once: TVs use it to keep broadcasts in step with each other. */

@@ -179,6 +179,46 @@ describe('Android debugging (adb) warning', () => {
   });
 });
 
+describe('a TV that was away catches up at once (OF9)', () => {
+  const nextUpdate = (s: Socket, timeoutMs: number) =>
+    new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), timeoutMs);
+      s.once('manifest:updated', (p: { version: string }) => {
+        clearTimeout(timer);
+        resolve(p.version);
+      });
+    });
+
+  it('is told about a change made while it was disconnected on its first heartbeat, and only then', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Away TV');
+    // Content pushes go out in 2 s batches: let the one from pairing pass first.
+    await new Promise((r) => setTimeout(r, 2_500));
+    const manifest = await call(t.base, 'GET', '/devices/manifest', { token: tv.deviceToken });
+    const current = manifest.body.version as string;
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+
+    // Up to date: nothing is sent.
+    const fresh = tvSocket(tv.deviceToken);
+    await connected(fresh);
+    const quiet = nextUpdate(fresh, 1_000);
+    await fresh.timeout(3_000).emitWithAck('heartbeat', { ...base, manifestVersion: current });
+    assert.equal(await quiet, null);
+    fresh.disconnect();
+
+    // Reconnects still holding an older version: told the current one on its first heartbeat.
+    const back = tvSocket(tv.deviceToken);
+    await connected(back);
+    const told = nextUpdate(back, 3_000);
+    await back.timeout(3_000).emitWithAck('heartbeat', { ...base, manifestVersion: 'old-version' });
+    assert.equal(await told, current);
+
+    // Later heartbeats on the same connection never rebuild or resend.
+    const again = nextUpdate(back, 1_000);
+    await back.timeout(3_000).emitWithAck('heartbeat', { ...base, manifestVersion: 'old-version' });
+    assert.equal(await again, null);
+  });
+});
+
 describe('download problems reach head office', () => {
   it('"3 of 12 files missing: storage full" shows on the screen page and the Live wall', async () => {
     const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Full TV');
