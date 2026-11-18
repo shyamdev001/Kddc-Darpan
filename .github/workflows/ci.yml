@@ -52,6 +52,10 @@ jobs:
       - name: Install
         run: npm ci
 
+      # FFmpeg, as on the production server, so the video profile tests run instead of skipping.
+      - name: FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+
       # Known security holes in what runs on the server. Fails on high or critical; moderate ones are
       # printed for the record. The public registry is named because some mirrors lack the audit API.
       - name: Security advisories (npm audit)
