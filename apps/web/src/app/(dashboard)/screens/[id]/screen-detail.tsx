@@ -535,6 +535,25 @@ function DeviceCard({
             </ul>
           </div>
         )}
+        {screen.tvOff && (
+          <div role="status" className="border-b bg-haldi/15 px-4 py-2.5 text-sm text-[#6b4a00] sm:px-5">
+            <p>
+              <span className="font-medium">
+                {screen.tvOff.kind === "screen"
+                  ? "Turned off by the TV, not by Darpan"
+                  : "Another input or app took the screen"}
+              </span>{" "}
+              during display hours, {formatAgo(screen.tvOff.at, now)}
+              {screen.tvOff.backAt ? `; back ${formatAgo(screen.tvOff.backAt, now)}` : "; not back yet"}
+              {screen.tvOff.count > 1 ? ` (${screen.tvOff.count} times in a day)` : ""}.
+            </p>
+            <p className="mt-0.5">
+              {screen.tvOff.kind === "screen"
+                ? "Switch off the TV's own sleep timer and auto power-off (often \"turn off when no signal\" or eco mode)."
+                : "Set the TV to start on its home screen (power-on input or startup app), not on an HDMI input."}
+            </p>
+          </div>
+        )}
         {screen.crash && <CrashNote crash={screen.crash} ago={formatAgo(screen.crash.at, now)} />}
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-4 py-4 text-sm sm:px-5">
           {facts.map(([label, value]) => (

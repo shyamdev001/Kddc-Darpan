@@ -1,4 +1,4 @@
-import { TV_PLATFORMS, type TvCapabilities, type TvCodecSupport, type TvDeviceFacts, type TvDisplayFacts, type TvVideoFacts } from '@darpan/shared';
+import { TV_PLATFORMS, type TvCapabilities, type TvOffReport, type TvCodecSupport, type TvDeviceFacts, type TvDisplayFacts, type TvVideoFacts } from '@darpan/shared';
 
 const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null);
 const text = (v: unknown, max: number): string | null => (typeof v === 'string' && v.length > 0 ? v.slice(0, max) : null);
@@ -64,6 +64,37 @@ export function cleanUnplayable(v: unknown[]): { mediaId: string; reason: string
     out.push({ mediaId: o.mediaId, reason: text(o.reason, 120) ?? 'cannot play on this TV' });
   }
   return out;
+}
+
+const DAY_SEC = 24 * 60 * 60;
+
+/**
+ * The TV's "screen taken away" report (DC9) as a stored record: "seconds ago" by the TV's uptime
+ * clock becomes a time by the server's, so a TV with a wrong clock still reports right. null when malformed.
+ */
+export function tvOffRecord(v: unknown, now: number): TvOffReport | null {
+  const o = typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  if (!o || (o.kind !== 'screen' && o.kind !== 'input')) return null;
+  const ago = int(o.agoSec, 0, 30 * DAY_SEC);
+  const count = int(o.count, 1, 10_000);
+  if (ago === null || count === null) return null;
+  const back = o.backAgoSec === null ? null : int(o.backAgoSec, 0, ago);
+  if (back === null && o.backAgoSec !== null) return null;
+  return {
+    kind: o.kind,
+    at: new Date(now - ago * 1000).toISOString(),
+    backAt: back === null ? null : new Date(now - back * 1000).toISOString(),
+    count,
+  };
+}
+
+/** A stored record, shown only while it is less than a week old. */
+export function recentTvOff(v: unknown, now: number): TvOffReport | null {
+  const o = typeof v === 'object' && v !== null ? (v as Partial<TvOffReport>) : null;
+  if (!o || (o.kind !== 'screen' && o.kind !== 'input') || typeof o.at !== 'string' || typeof o.count !== 'number') return null;
+  const at = Date.parse(o.at);
+  if (!Number.isFinite(at) || now - at > 7 * DAY_SEC * 1000) return null;
+  return { kind: o.kind, at: o.at, backAt: typeof o.backAt === 'string' ? o.backAt : null, count: o.count };
 }
 
 /** Keeps only the known fields, each checked and short. null when it is not a capabilities object at all. */

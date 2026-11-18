@@ -55,7 +55,7 @@ export function FleetView() {
           <h2 className="px-5 pt-4 pb-2 font-semibold">Needs a look</h2>
           <ul className="divide-y divide-haldi/25">
             {data.attention.map((s) => (
-              <li key={s.id}>
+              <li key={`${s.id}-${s.note}`}>
                 <Link href={`/screens/${s.id}`} className="flex items-center gap-3 px-5 py-3 text-sm hover:bg-haldi/10">
                   <span className="min-w-0 flex-1">
                     <span className="font-medium">{s.name}</span>

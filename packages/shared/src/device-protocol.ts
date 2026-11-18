@@ -3,6 +3,7 @@ import type { DisplayHoursValue, TimeSlot } from './schedule';
 // Contract between the API and the Android TV app.
 // The Kotlin side mirrors these shapes with kotlinx.serialization.
 import type { MediaType } from './enums';
+import type { TvOffKind } from './screen';
 
 /** POST /api/devices/register */
 export interface RegisterDeviceRequest {
@@ -141,6 +142,11 @@ export interface HeartbeatPayload {
   capabilities?: TvCapabilities;
   /** Videos this TV cannot play (its decoder or sound output refused them); it skips them. */
   unplayable?: { mediaId: string; reason: string }[];
+  /**
+   * The latest time the TV itself took the screen away during display hours (its sleep or power-off
+   * timer, or another input), seconds ago by the TV's uptime clock; left out when none.
+   */
+  tvOff?: { kind: TvOffKind; agoSec: number; backAgoSec: number | null; count: number };
   sync?: PlaySyncReport;
 }
 

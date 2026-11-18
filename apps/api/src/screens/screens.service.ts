@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { cleanCapabilities, cleanUnplayable } from './capabilities';
+import { cleanCapabilities, cleanUnplayable, recentTvOff } from './capabilities';
 import { cleanPlaySync } from './play-sync';
 import { crashReport } from './crash-report';
 import {
@@ -59,6 +59,7 @@ const NEW_TV_STATE = {
   downloadError: null,
   lastCrash: Prisma.DbNull,
   unplayable: Prisma.DbNull,
+  tvOff: Prisma.DbNull,
   safeMode: false,
   capabilities: Prisma.DbNull,
   playSync: Prisma.DbNull,
@@ -244,6 +245,7 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
         appVersion: true,
         capabilities: true,
         unplayable: true,
+        tvOff: true,
         branch: { select: { name: true } },
       },
     });
@@ -352,6 +354,7 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
       crash: screenCrash(s.lastCrash),
       safeMode: s.safeMode,
       // Ads deleted since are left out: nothing to act on.
+      tvOff: recentTvOff(s.tvOff, Date.now()),
       unplayable: reported.flatMap((u) => (mediaName.has(u.mediaId) ? [{ mediaId: u.mediaId, name: mediaName.get(u.mediaId)!, reason: u.reason }] : [])),
       capabilities: cleanCapabilities(s.capabilities),
       playSync: cleanPlaySync(s.playSync),

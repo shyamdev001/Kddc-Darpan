@@ -1,6 +1,7 @@
 // The fleet summary counts what the TVs reported and never guesses (docs/AUDIT.md, DC6).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { recentTvOff, tvOffRecord } from '../src/screens/capabilities';
 import { fleetSummary, sdkOf, type FleetRow } from '../src/screens/fleet';
 
 const caps = (extra: Record<string, unknown> = {}) => ({
@@ -82,9 +83,50 @@ describe('fleet summary (DC6)', () => {
     assert.deepEqual(f.videos, { yes: 0, no: 0, unknown: 0 });
   });
 
+  it('a screen the TV itself turned off in the last day needs a look (DC9)', () => {
+    const now = Date.parse('2026-11-18T12:00:00Z');
+    const f = fleetSummary(
+      [
+        row('e', { tvOff: { kind: 'screen', at: '2026-11-18T10:00:00.000Z', backAt: null, count: 2 } }),
+        row('f', { tvOff: { kind: 'input', at: '2026-11-16T10:00:00.000Z', backAt: null, count: 1 } }),
+      ],
+      now,
+    );
+    assert.deepEqual(f.attention.map((a) => [a.id, a.note]), [['e', 'the TV turned its screen off during display hours']]);
+  });
+
   it('reads the API level out of the Android text', () => {
     assert.equal(sdkOf('Android 14 (API 34)'), 34);
     assert.equal(sdkOf('Android 9'), null);
     assert.equal(sdkOf(null), null);
+  });
+});
+
+describe('"turned off by the TV" reports (DC9)', () => {
+  const now = Date.parse('2026-11-18T12:00:00Z');
+
+  it('seconds ago by the TV become a time by the server', () => {
+    assert.deepEqual(tvOffRecord({ kind: 'screen', agoSec: 600, backAgoSec: 60, count: 3 }, now), {
+      kind: 'screen',
+      at: '2026-11-18T11:50:00.000Z',
+      backAt: '2026-11-18T11:59:00.000Z',
+      count: 3,
+    });
+    assert.equal(tvOffRecord({ kind: 'input', agoSec: 5, backAgoSec: null, count: 1 }, now)?.backAt, null);
+  });
+
+  it('anything malformed is dropped', () => {
+    assert.equal(tvOffRecord(null, now), null);
+    assert.equal(tvOffRecord({ kind: 'hdmi', agoSec: 5, backAgoSec: null, count: 1 }, now), null);
+    assert.equal(tvOffRecord({ kind: 'screen', agoSec: -1, backAgoSec: null, count: 1 }, now), null);
+    assert.equal(tvOffRecord({ kind: 'screen', agoSec: 5, backAgoSec: 10, count: 1 }, now), null, 'back before it went');
+    assert.equal(tvOffRecord({ kind: 'screen', agoSec: 5, backAgoSec: null, count: 0 }, now), null);
+  });
+
+  it('a stored report shows for a week', () => {
+    const r = { kind: 'screen', at: '2026-11-12T12:00:00.000Z', backAt: null, count: 1 };
+    assert.deepEqual(recentTvOff(r, now), r);
+    assert.equal(recentTvOff({ ...r, at: '2026-11-11T11:00:00.000Z' }, now), null);
+    assert.equal(recentTvOff('x', now), null);
   });
 });

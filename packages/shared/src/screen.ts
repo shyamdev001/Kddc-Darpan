@@ -133,6 +133,18 @@ export interface FleetSummary {
   attention: FleetScreenRef[];
 }
 
+/** screen: the panel went dark (the TV's sleep or auto power-off). input: another input or app took it. */
+export type TvOffKind = 'screen' | 'input';
+
+export interface TvOffReport {
+  kind: TvOffKind;
+  at: string;
+  /** when the app was on screen again; null while still away */
+  backAt: string | null;
+  /** how many times in the day before the report */
+  count: number;
+}
+
 export interface ScreenListResponse {
   items: ScreenSummary[];
   /** TVs showing a pairing code that nobody has claimed yet */
@@ -170,6 +182,8 @@ export interface ScreenDetail extends ScreenSummary {
   safeMode: boolean;
   /** Videos this TV skips because it cannot play them, with the ad's name and the reason in plain words. */
   unplayable: { mediaId: string; name: string; reason: string }[];
+  /** The TV itself took the screen away during display hours, not Darpan; null when not in the last week. */
+  tvOff: TvOffReport | null;
   /** What the TV says it can do; null for app versions that do not report it. */
   capabilities: TvCapabilities | null;
   /** How the TV keeps to the shared timeline; null for app versions that do not report it. */

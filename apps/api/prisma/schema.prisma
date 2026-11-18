@@ -149,6 +149,7 @@ model Screen {
   downloadError   String? // why the last file failed, in plain words
   lastCrash       Json? // the app's last crash as the TV reported it (type, message, top frames, counts)
   unplayable      Json? // videos this TV cannot play, as it reported them: [{mediaId, reason}]
+  tvOff           Json? // the TV itself took the screen away in display hours: {kind, at, backAt, count}
   safeMode        Boolean   @default(false) // crash-looping: posters only for now
   capabilities    Json? // what this TV model can do (WebView, decoders, brightness, screen-off...), from the TV
   playSync        Json? // how well the TV keeps to the shared timeline (mode, clock error, video drift), from the heartbeat

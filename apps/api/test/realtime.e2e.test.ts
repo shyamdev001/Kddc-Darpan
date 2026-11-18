@@ -402,6 +402,33 @@ describe('what each TV can do', () => {
   });
 });
 
+describe('the screen taken away by the TV itself (DC9)', () => {
+  it('reaches the screen page with its time by the server clock, and stays when later heartbeats say nothing', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Sleepy TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    const detail = async () => (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body;
+    assert.equal((await detail()).tvOff, null);
+
+    const before = Date.now();
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, tvOff: { kind: 'screen', agoSec: 300, backAgoSec: null, count: 2 } });
+    const off = (await detail()).tvOff;
+    assert.equal(off.kind, 'screen');
+    assert.equal(off.count, 2);
+    assert.equal(off.backAt, null);
+    const at = Date.parse(off.at);
+    assert.ok(at <= before - 299_000 && at >= before - 310_000, off.at);
+
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, tvOff: { kind: 'screen', agoSec: 400, backAgoSec: 30, count: 2 } });
+    assert.ok((await detail()).tvOff.backAt, 'back on');
+    await device.timeout(3_000).emitWithAck('heartbeat', base); // app restarted: nothing to say
+    assert.equal((await detail()).tvOff.kind, 'screen', 'the last report stays');
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, tvOff: { kind: 'tizen', agoSec: 1, backAgoSec: null, count: 1 } });
+    assert.equal((await detail()).tvOff.kind, 'screen', 'a malformed report changes nothing');
+  });
+});
+
 describe('the fleet page (DC6)', () => {
   it('counts only the screens in the area the user may see', async () => {
     const tv = await pairedTv(t.base, admin, places.nadiadStation.id, 'Station TV');

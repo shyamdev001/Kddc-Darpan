@@ -1,5 +1,5 @@
 import { youtubeSupport, type FleetGroup, type FleetScreenRef, type FleetSummary, type FleetTally } from '@darpan/shared';
-import { cleanCapabilities } from './capabilities';
+import { cleanCapabilities, recentTvOff } from './capabilities';
 
 /** The screen fields the fleet summary reads. */
 export interface FleetRow {
@@ -11,6 +11,7 @@ export interface FleetRow {
   appVersion: string | null;
   capabilities: unknown;
   unplayable: unknown;
+  tvOff?: unknown;
   branch: string | null;
 }
 
@@ -42,7 +43,7 @@ function groups(rows: { label: string; online: boolean }[]): FleetGroup[] {
 }
 
 /** Counts, never guesses: a screen that has not said is "not known", not "no". Pure. */
-export function fleetSummary(rows: FleetRow[]): FleetSummary {
+export function fleetSummary(rows: FleetRow[], now = Date.now()): FleetSummary {
   const all = rows.map((r) => ({ r, c: cleanCapabilities(r.capabilities) }));
   const sdks = all.map(({ r, c }) => c?.sdk ?? sdkOf(c?.device?.os ?? r.osVersion));
   const known = sdks.filter((s): s is number => s !== null);
@@ -53,6 +54,13 @@ export function fleetSummary(rows: FleetRow[]): FleetSummary {
     const skipped = Array.isArray(r.unplayable) ? r.unplayable.length : 0;
     if (c?.h264_1080p === false) attention.push({ ...ref, note: 'cannot play our videos: posters only' });
     else if (skipped > 0) attention.push({ ...ref, note: `skips ${skipped} ${skipped === 1 ? 'video' : 'videos'} it cannot play` });
+    const off = recentTvOff(r.tvOff, now);
+    if (off && now - Date.parse(off.at) < 24 * 60 * 60 * 1000) {
+      attention.push({
+        ...ref,
+        note: off.kind === 'screen' ? 'the TV turned its screen off during display hours' : 'another input or app took the screen during display hours',
+      });
+    }
   }
 
   return {

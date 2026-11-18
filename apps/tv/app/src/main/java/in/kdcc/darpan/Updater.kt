@@ -100,6 +100,7 @@ class Updater(
     }
 
     private fun install(app: ManifestApp) {
+        MainActivity.offWatch.expect(120_000) // the install closes the app: Darpan's doing, not the TV's (DC9)
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)

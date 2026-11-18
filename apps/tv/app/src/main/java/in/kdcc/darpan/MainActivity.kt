@@ -2,11 +2,14 @@ package `in`.kdcc.darpan
 
 import android.app.Activity
 import android.app.ActivityManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
@@ -171,11 +174,29 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
         if (prefs.serverUrl.isBlank()) showSetup(null) else begin()
         scope.launch { kioskLoop() }
+        registerReceiver(screenPower, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        })
+    }
+
+    /** The panel going dark or coming back; only a running app hears these (DC9). */
+    private val screenPower = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> if (offWatch.away(OffWatch.Kind.SCREEN, Kiosk.inMaintenance(context))) {
+                    Log.w(TAG, "The TV turned the screen off during display hours")
+                    link?.sendHeartbeat()
+                }
+                Intent.ACTION_SCREEN_ON -> if (visible && offWatch.back()) link?.sendHeartbeat()
+            }
+        }
     }
 
     override fun onStart() {
         super.onStart()
         visible = true
+        if (offWatch.back()) link?.sendHeartbeat()
     }
 
     override fun onResume() {
@@ -186,6 +207,13 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     override fun onStop() {
         visible = false
+        // Still lit but the app is gone: another input or app took the screen (the TV's power-on
+        // input, a remote's input key). A dark screen is the receiver's to count (DC9).
+        val lit = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+        if (lit && !isFinishing && offWatch.away(OffWatch.Kind.INPUT, Kiosk.inMaintenance(this))) {
+            Log.w(TAG, "Another input or app took the screen during display hours")
+            link?.sendHeartbeat()
+        }
         super.onStop()
     }
 
@@ -255,6 +283,11 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     override fun onDestroy() {
+        try {
+            unregisterReceiver(screenPower)
+        } catch (e: IllegalArgumentException) {
+            // never registered
+        }
         stopLive()
         broadcasts.stop()
         playback.release()
@@ -524,6 +557,11 @@ class MainActivity : Activity(), DeviceLink.Listener {
      */
     private fun onPlayState(state: PlayState) {
         idlePanel.visibility = if (state == PlayState.NOTHING) View.VISIBLE else View.GONE
+        offWatch.inHours = when (state) {
+            PlayState.OFF_HOURS -> false
+            PlayState.STOPPED -> null
+            else -> true
+        }
         if (state == PlayState.OFF_HOURS) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
@@ -567,6 +605,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             }
             "restart" -> scope.launch {
                 l?.sendAck(commandId, true) // reply first: the restart cuts the connection
+                offWatch.expect(60_000)
                 delay(800)
                 DarpanApp.restart(this@MainActivity)
             }
@@ -599,6 +638,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 }
             }
             "screenOffTest" -> scope.launch {
+                offWatch.expect(30_000)
                 val result = ScreenOff.test(this@MainActivity)
                 if (result == null) {
                     l?.sendAck(commandId, false, "Kiosk mode is not set up: the app cannot switch the screen off")
@@ -733,6 +773,15 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("sync", syncReport())
             // Videos this TV cannot play (its decoder refused them), so head office knows why (DC3).
             .put("unplayable", JSONArray(playback.unplayable.map { JSONObject().put("mediaId", it.mediaId).put("reason", it.reason) }))
+            // The screen taken away by the TV itself during display hours (DC9); omitted when none.
+            .apply {
+                offWatch.report()?.let { r ->
+                    put(
+                        "tvOff",
+                        JSONObject().put("kind", r.kind).put("agoSec", r.agoSec).put("backAgoSec", r.backAgoSec ?: JSONObject.NULL).put("count", r.count),
+                    )
+                }
+            }
             .apply {
                 if (::downloader.isInitialized) {
                     val files = downloader.summary
@@ -838,6 +887,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
         @Volatile
         var visible = false
             private set
+
+        /** Kept for the life of the process, so a recreated activity still knows (DC9). */
+        val offWatch = OffWatch { SystemClock.elapsedRealtime() }
 
         private const val TAG = "Darpan"
         private const val SYNC_EVERY_MS = 10 * 60_000L
