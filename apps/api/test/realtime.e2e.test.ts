@@ -339,6 +339,48 @@ describe('what each TV can do', () => {
     assert.equal((await detail()).webView.major, 91);
   });
 
+  it('the fuller report (make, chipset, panel, decoders) is kept, and keeps model and Android current (DC4)', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Reported TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    const base = { currentMediaId: null, storageFreeBytes: 1, ramFreeBytes: 1, appVersion: '0.1.0' };
+    const detail = async () => (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body;
+    const decoders = Array.from({ length: 50 }, (_, i) => ({ name: `c2.vendor.dec${i}`, type: 'avc', hardware: i % 2 === 0, extra: 1 }));
+    await device.timeout(3_000).emitWithAck('heartbeat', {
+      ...base,
+      capabilities: caps(110, {
+        sdk: 34,
+        device: { brand: 'Xiaomi', manufacturer: 'Xiaomi', model: 'MiTV-MZTU0', chipset: 'Mediatek MT9638', os: 'Android 14 (API 34)' },
+        display: { width: 1920, height: 1080, dpi: 320, panelWidth: 3840, panelHeight: 2160, refreshHz: 60 },
+        video: {
+          avc: { profile: 'High', level: '5.1', ours: true, portrait: false },
+          hevc: { profile: 'Main 10', level: '5.1', ours: 'yes' },
+          decoders: [...decoders, { name: '', type: 'avc', hardware: true }],
+        },
+        platform: 'googletv',
+      }),
+    });
+    const d = await detail();
+    assert.equal(d.capabilities.device.chipset, 'Mediatek MT9638');
+    assert.equal(d.capabilities.display.panelWidth, 3840);
+    assert.deepEqual(d.capabilities.video.avc, { profile: 'High', level: '5.1', ours: true, portrait: false });
+    assert.equal(d.capabilities.video.hevc, null, 'a malformed entry is dropped, not guessed');
+    assert.equal(d.capabilities.video.decoders.length, 40, 'at most 40 decoders');
+    assert.equal(d.capabilities.video.decoders[0].extra, undefined);
+    assert.equal(d.capabilities.platform, 'googletv');
+    assert.equal(d.model, 'Xiaomi MiTV-MZTU0');
+    assert.equal(d.osVersion, 'Android 14 (API 34)');
+    assert.equal(d.resolution, '1920x1080');
+
+    // An unknown platform is dropped; an older app (no device facts) leaves the columns alone.
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, capabilities: caps(110, { platform: 'tizen' }) });
+    const older = await detail();
+    assert.equal(older.capabilities.platform, null);
+    assert.equal(older.capabilities.device, null);
+    assert.equal(older.model, 'Xiaomi MiTV-MZTU0');
+    assert.equal(older.osVersion, 'Android 14 (API 34)');
+  });
+
   it('the broadcast form learns which chosen screens cannot play YouTube, and why', async () => {
     const region = places.south.id;
     const old = await pairedTv(t.base, admin, places.matarBranch.id, 'Old WebView TV');

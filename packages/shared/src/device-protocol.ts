@@ -156,9 +156,9 @@ export interface TvCapabilities {
   sdk: number;
   /** The system WebView: YouTube broadcasts play in it. null = none installed. */
   webView: { package: string; version: string; major: number | null } | null;
-  /** Has a hardware decoder for the 1080p H.264 videos the server makes. */
+  /** Plays the server's videos: an H.264 High decoder at level 4.0 or more, 1080p at 30 fps. */
   h264_1080p: boolean | null;
-  /** Has an HEVC (H.265) decoder (for the record; the server always makes H.264). */
+  /** Has an HEVC (H.265) Main decoder for 1080p30 (for the record; the server always makes H.264). */
   hevc: boolean | null;
   /** The app is device owner: kiosk mode, system brightness, auto-start and screen-off work. */
   deviceOwner: boolean;
@@ -169,6 +169,52 @@ export interface TvCapabilities {
   screenOff: boolean | null;
   /** Screenshots show video; false = the video area comes out black on this model. */
   videoInScreenshot: boolean | null;
+  /** Who made it and what it runs. null = app too old to say. */
+  device: TvDeviceFacts | null;
+  /** The picture Android draws (width x height) and the panel behind it. */
+  display: TvDisplayFacts | null;
+  /** The best H.264 / H.265 the decoders offer, and every video decoder. */
+  video: TvVideoFacts | null;
+  /** Google TV, Android TV (with Google services) or plain Android without them. */
+  platform: TvPlatform | null;
+}
+
+export const TV_PLATFORMS = ['googletv', 'androidtv', 'aosp'] as const;
+export type TvPlatform = (typeof TV_PLATFORMS)[number];
+
+export interface TvDeviceFacts {
+  brand: string;
+  manufacturer: string;
+  model: string;
+  chipset: string | null;
+  /** e.g. "Android 14 (API 34)" */
+  os: string;
+}
+
+export interface TvDisplayFacts {
+  width: number;
+  height: number;
+  dpi: number | null;
+  panelWidth: number | null;
+  panelHeight: number | null;
+  refreshHz: number | null;
+}
+
+export interface TvCodecSupport {
+  /** best profile offered, e.g. "High" */
+  profile: string;
+  /** best level offered, e.g. "5.1" */
+  level: string;
+  /** plays the server's landscape videos */
+  ours: boolean;
+  /** plays portrait (1080x1920) ones too */
+  portrait: boolean;
+}
+
+export interface TvVideoFacts {
+  avc: TvCodecSupport | null;
+  hevc: TvCodecSupport | null;
+  decoders: { name: string; type: string; hardware: boolean }[];
 }
 
 /** Whether a YouTube broadcast should play on this TV, and why not. */

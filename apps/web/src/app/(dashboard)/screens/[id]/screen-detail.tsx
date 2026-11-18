@@ -313,9 +313,44 @@ function Capabilities({ caps }: { caps: ScreenDetail["capabilities"] }) {
   }
   const yt = youtubeSupport(caps);
   const signal = (dbm: number) => (dbm >= -60 ? "strong" : dbm >= -70 ? "fair" : "weak");
-  const rows: [string, string, boolean | null][] = [
+  const avc = caps.video?.avc ?? null;
+  const hevc = caps.video?.hevc ?? null;
+  const d = caps.display;
+  const platform = caps.platform ? PLATFORM_NAMES[caps.platform] : null;
+  type Row = [string, string, boolean | null];
+  const rows: Row[] = [
+    ...(caps.device
+      ? ([["Made by", [caps.device.manufacturer, caps.device.model].filter(Boolean).join(" "), null]] as Row[])
+      : []),
+    ...(caps.device?.chipset ? ([["Chipset", caps.device.chipset, null]] as Row[]) : []),
+    ...(caps.device?.os || platform
+      ? ([["Software", [caps.device?.os, platform].filter(Boolean).join(", "), null]] as Row[])
+      : []),
+    ...(d
+      ? ([
+          [
+            "Picture",
+            `${d.width}x${d.height}` +
+              (d.panelWidth && d.panelHeight && (d.panelWidth !== d.width || d.panelHeight !== d.height) ? ` on a ${d.panelWidth}x${d.panelHeight} panel` : "") +
+              (d.refreshHz ? `, ${d.refreshHz} Hz` : ""),
+            null,
+          ],
+        ] as Row[])
+      : []),
     ["YouTube broadcasts", yt.ok ? "Yes" : yt.ok === false ? `No: ${yt.reason?.replace(/^has /, "")}` : "Not known", yt.ok],
-    ["1080p video", caps.h264_1080p === null ? "Not known" : caps.h264_1080p ? "Yes" : "No: posters only are safe", caps.h264_1080p],
+    [
+      "Our videos (H.264 1080p)",
+      caps.h264_1080p === null
+        ? "Not known"
+        : caps.h264_1080p
+          ? `Yes${avc ? ` (decoder up to ${avc.profile} ${avc.level})` : ""}`
+          : `No: posters only are safe${avc ? ` (decoder up to ${avc.profile} ${avc.level})` : ""}`,
+      caps.h264_1080p,
+    ],
+    ...(avc && caps.h264_1080p ? ([["Portrait videos", avc.portrait ? "Yes" : "No: use landscape videos on this TV", avc.portrait]] as Row[]) : []),
+    ...(caps.video
+      ? ([["H.265 (HEVC)", hevc ? (hevc.ours ? `Yes, up to ${hevc.profile} ${hevc.level}` : `Below 1080p (${hevc.profile} ${hevc.level})`) : "No decoder", null]] as Row[])
+      : []),
     ["Kiosk mode and auto-start", caps.deviceOwner ? "Set up" : "Not set up (the app is not device owner)", caps.deviceOwner],
     [
       "Brightness from the dashboard",
@@ -355,9 +390,30 @@ function Capabilities({ caps }: { caps: ScreenDetail["capabilities"] }) {
           </div>
         ))}
       </dl>
+      {caps.video && caps.video.decoders.length > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="cursor-pointer text-muted-foreground">Video decoders ({caps.video.decoders.length})</summary>
+          <ul className="mt-2 grid gap-1 text-xs">
+            {caps.video.decoders.map((dec) => (
+              <li key={`${dec.name}-${dec.type}`} className="flex justify-between gap-4">
+                <span className="min-w-0 break-all">{dec.name}</span>
+                <span className="shrink-0 text-muted-foreground">
+                  {dec.type}, {dec.hardware ? "hardware" : "software"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }
+
+const PLATFORM_NAMES: Record<NonNullable<NonNullable<ScreenDetail["capabilities"]>["platform"]>, string> = {
+  googletv: "Google TV",
+  androidtv: "Android TV",
+  aosp: "Android without Google TV services",
+};
 
 /** The app's last crash, in a fold: the type and when, with the technical lines for whoever fixes it. */
 function CrashNote({ crash, ago }: { crash: NonNullable<ScreenDetail["crash"]>; ago: string }) {

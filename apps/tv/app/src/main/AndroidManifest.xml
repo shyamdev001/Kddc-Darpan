@@ -15,6 +15,13 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <!-- Android 11+ hides other apps unless named: these two tell Google TV, Android TV and plain
+         Android apart for the screen page (DC4). Nothing is opened or used. -->
+    <queries>
+        <package android:name="com.google.android.apps.tv.launcherx" />
+        <package android:name="com.google.android.gms" />
+    </queries>
+
     <application
         android:name=".DarpanApp"
         android:allowBackup="false"

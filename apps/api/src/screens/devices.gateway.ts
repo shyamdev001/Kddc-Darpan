@@ -16,7 +16,7 @@ import type { Namespace, Socket } from 'socket.io';
 import { ContentEvents } from '../events/content-events';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { cleanCapabilities, cleanUnplayable } from './capabilities';
+import { cleanCapabilities, cleanUnplayable, screenFacts } from './capabilities';
 import { cleanPlaySync } from './play-sync';
 import { crashReport } from './crash-report';
 import { hashDeviceToken } from './device-auth';
@@ -165,11 +165,13 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       currentMediaId = exists ? body.currentMediaId : null;
     }
 
+    const caps = cleanCapabilities(body.capabilities);
     await this.prisma.screen.updateMany({
       where: { id: screenId },
       data: {
         lastSeenAt: new Date(),
         currentMediaId,
+        ...screenFacts(caps),
         storageFreeMb: mb(body.storageFreeBytes),
         storageTotalMb: mb(body.storageTotalBytes),
         ramFreeMb: mb(body.ramFreeBytes),
@@ -189,7 +191,7 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
           : {}),
         ...(typeof body.adbEnabled === 'boolean' ? { adbEnabled: body.adbEnabled } : {}),
         ...(typeof body.safeMode === 'boolean' ? { safeMode: body.safeMode } : {}),
-        ...(cleanCapabilities(body.capabilities) ? { capabilities: cleanCapabilities(body.capabilities) as unknown as Prisma.InputJsonObject } : {}),
+        ...(caps ? { capabilities: caps as unknown as Prisma.InputJsonObject } : {}),
         // Older app versions send no sync report: leave what we had.
         ...(cleanPlaySync(body.sync) ? { playSync: cleanPlaySync(body.sync) as unknown as Prisma.InputJsonObject } : {}),
         ...('crash' in body ? { lastCrash: (crashReport(body.crash) as Prisma.InputJsonObject | null) ?? Prisma.DbNull } : {}),
