@@ -45,7 +45,7 @@ class CapabilitiesTest {
         assertEquals(
             setOf(
                 "sdk", "webView", "h264_1080p", "hevc", "deviceOwner", "brightness", "network", "screenOff", "videoInScreenshot",
-                "device", "display", "video", "platform",
+                "device", "display", "video", "platform", "reboot", "volume",
             ),
             json.keys,
         )
