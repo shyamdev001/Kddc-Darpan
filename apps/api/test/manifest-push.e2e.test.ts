@@ -98,7 +98,7 @@ describe('pushing a change to 101 TVs', () => {
   it('a kept manifest expires after 30 s even without a change', async () => {
     const svc = t.app.get(ManifestService);
     const tv = tvs[1];
-    await svc.forDevice(tv.id);
+    await svc.build(tv.id); // kept from now (its manifest from the push above may be seconds old)
     const before = builds;
     await svc.forDevice(tv.id, Date.now() + 29_000);
     assert.equal(builds, before);

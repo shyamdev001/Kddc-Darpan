@@ -72,10 +72,11 @@ export class ManifestService implements OnModuleDestroy {
     if (!screen) throw new NotFoundException();
 
     const now = new Date();
-    const [layers, hours, broadcasts] = await Promise.all([
+    const [layers, hours, broadcasts, pin] = await Promise.all([
       this.resolver.layers(screen, false, now),
       this.resolver.hours(screen),
       this.resolver.broadcastsMany([screen], now),
+      this.prisma.kioskSettings.findUnique({ where: { id: 1 }, select: { pinSalt: true, pinHash: true, pinIterations: true } }),
     ]);
 
     const ids = [...new Set(layers.map((l) => l.playlistId))];
@@ -135,7 +136,6 @@ export class ManifestService implements OnModuleDestroy {
     const items = fallbackItem ? [fallbackItem, ...[...media.values()].filter((i) => i.mediaId !== fallbackItem.mediaId)] : [...media.values()];
     const fallbackMediaId = fallbackItem?.mediaId ?? null;
     const sync = screen.branchId ? ((await this.prisma.branch.findUnique({ where: { id: screen.branchId }, select: { syncPlayback: true } }))?.syncPlayback ?? false) : false;
-    const pin = await this.prisma.kioskSettings.findUnique({ where: { id: 1 }, select: { pinSalt: true, pinHash: true, pinIterations: true } });
     // The local unlock PIN (K1), as a salted hash the TV checks offline; never the PIN itself.
     const kioskPin = pin?.pinSalt && pin.pinHash && pin.pinIterations ? { salt: pin.pinSalt, hash: pin.pinHash, iterations: pin.pinIterations } : null;
     const settings: ManifestSettings = { orientation: screen.orientation, hours: hours?.hours ?? null, sync, kioskPin };
