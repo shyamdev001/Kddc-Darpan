@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 
 import { KIOSK_PIN_PATTERN, KIOSK_RELEASE_ACTIONS, REMOTE_COMMANDS, type KioskReleaseAction, type RemoteCommandType } from '@darpan/shared';
 
@@ -87,6 +87,13 @@ export class SetPlaylistDto {
 export class SendCommandDto {
   @IsIn(REMOTE_COMMANDS, { message: 'Unknown command' })
   type!: RemoteCommandType;
+
+  /** "volume" only. */
+  @ValidateIf((o: SendCommandDto) => o.type === 'volume')
+  @IsInt({ message: 'Volume must be a whole number from 0 to 100' })
+  @Min(0, { message: 'Volume must be a whole number from 0 to 100' })
+  @Max(100, { message: 'Volume must be a whole number from 0 to 100' })
+  level?: number;
 }
 
 export class KioskReleaseDto {

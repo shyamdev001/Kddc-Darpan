@@ -99,6 +99,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private var stagedRaw: String? = null
     private var stagedAt = 0L
     private var brightness: Int? = null // percent from the display hours; null = the TV's own
+    /** Outside display hours: "black" (lit, lowest backlight) or "panelOff"; null in hours. */
+    private var nightMode: String? = null
     private val menuPresses = KioskPin.Presses()
     private var pinDialog: android.app.AlertDialog? = null
 
@@ -199,6 +201,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
             begin()
         }
         scope.launch { kioskLoop() }
+        wakeFromIntent(intent)
+        // A screen-off test that a restart cut short: its result is still learned (TV control A).
+        if (PowerControl.testOpen(this)) scope.launch { finishScreenOffTest() }
         registerReceiver(screenPower, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
@@ -213,9 +218,39 @@ class MainActivity : Activity(), DeviceLink.Listener {
                     Log.w(TAG, "The TV turned the screen off during display hours")
                     link?.sendHeartbeat()
                 }
-                Intent.ACTION_SCREEN_ON -> if (visible && offWatch.back()) link?.sendHeartbeat()
+                Intent.ACTION_SCREEN_ON -> {
+                    if (visible && offWatch.back()) link?.sendHeartbeat()
+                    // Back from the power key or the night: kiosk, backlight and content as they should be.
+                    if (offWatch.inHours == true) {
+                        Kiosk.enforce(this@MainActivity)
+                        applyBrightness()
+                        scope.launch { sync() }
+                    }
+                }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        wakeFromIntent(intent)
+    }
+
+    /** Opened by a wake alarm: allowed to switch the panel on for a few seconds (not for good, so
+     *  the watchdog never lights a TV that is off on purpose). */
+    private fun wakeFromIntent(i: Intent?) {
+        if (i == null || !i.getBooleanExtra(EXTRA_WAKE, false)) return
+        i.removeExtra(EXTRA_WAKE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setTurnScreenOn(true)
+            root.postDelayed({ setTurnScreenOn(false) }, 10_000)
+        }
+        PowerControl.wake(this)
+    }
+
+    /** The day value in hours; the lowest backlight on a lit night. */
+    private fun applyBrightness() {
+        if (nightMode == "black") Brightness.night(this) else Brightness.apply(this, brightness)
     }
 
     override fun onStart() {
@@ -227,7 +262,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     override fun onResume() {
         super.onResume()
         Kiosk.enforce(this)
-        Brightness.apply(this, brightness) // again, in case it was changed during maintenance
+        applyBrightness() // again, in case it was changed during maintenance
     }
 
     override fun onStop() {
@@ -643,7 +678,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         m.generatedAt?.let { parseIso(it) }?.let { TrustedClock.serverTime(it) }
         applyOrientation(m.settings.orientation == "PORTRAIT")
         brightness = m.settings.hours?.brightness
-        Brightness.apply(this, brightness)
+        applyBrightness()
         // A broadcast takes the screen before the playlists can start again.
         playback.hold(broadcasts.isLive(m.broadcast))
         playback.setManifest(m)
@@ -651,8 +686,10 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     /**
-     * Outside display hours the screen is black and may sleep (the TV's own power saving can take
-     * over); during hours it is kept awake. The "nothing to play" panel shows only in hours.
+     * Outside display hours the screen goes dark (TV control A): black at the lowest backlight with
+     * the panel kept awake, so it is surely back at the on time; or, on a device-owner TV that
+     * passed "Test screen off", the panel off with an alarm that switches it on again. During hours
+     * it is kept awake. The "nothing to play" panel shows only in hours.
      */
     private fun onPlayState(state: PlayState) {
         idlePanel.visibility = if (state == PlayState.NOTHING) View.VISIBLE else View.GONE
@@ -661,11 +698,37 @@ class MainActivity : Activity(), DeviceLink.Listener {
             PlayState.STOPPED -> null
             else -> true
         }
-        if (state == PlayState.OFF_HOURS) {
+        if (state == PlayState.OFF_HOURS) enterNight() else leaveNight()
+    }
+
+    private fun enterNight() {
+        if (nightMode != null) return
+        val wakeAt = PowerControl.nextOnAt(active?.settings?.hours, TrustedClock.now())
+        val panelOff = PowerControl.panelOffAtNight(Kiosk.isOwner(this), Capabilities.learned(this, Capabilities.KEY_SCREEN_OFF))
+        if (panelOff && wakeAt != null && TrustedClock.certain && !PowerControl.testOpen(this)) {
+            PowerControl.scheduleNightWake(this, wakeAt)
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
-            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (PowerControl.panelOff(this)) {
+                nightMode = "panelOff"
+                link?.sendHeartbeat()
+                return
+            }
+            PowerControl.scheduleNightWake(this, null)
         }
+        nightMode = "black"
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        Brightness.night(this)
+        link?.sendHeartbeat()
+    }
+
+    private fun leaveNight() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (nightMode == null) return
+        nightMode = null
+        PowerControl.scheduleNightWake(this, null)
+        if (!PowerControl.screenOn(this)) PowerControl.wake(this)
+        Brightness.apply(this, brightness)
+        link?.sendHeartbeat()
     }
 
     /** Portrait-mounted TVs: lay the stage out tall and turn it a quarter turn. */
@@ -698,12 +761,30 @@ class MainActivity : Activity(), DeviceLink.Listener {
     /** Remote commands run one at a time, in the order they came (K8). */
     private val commandQueue = Mutex()
 
-    override fun onCommand(commandId: String, type: String) {
+    override fun onCommand(commandId: String, type: String, params: JSONObject?) {
         // A restart waits for a running clearCache or screenshot; lock and unlock never interleave.
-        scope.launch { commandQueue.withLock { runCommand(commandId, type) } }
+        scope.launch { commandQueue.withLock { runCommand(commandId, type, params) } }
     }
 
-    private suspend fun runCommand(commandId: String, type: String) {
+    /**
+     * Waits for the open screen-off test to end (the alarm, or giving up), learns the result and
+     * answers the command once the server is reachable again.
+     */
+    private suspend fun finishScreenOffTest() {
+        val giveUpAt = SystemClock.elapsedRealtime() + PowerControl.TEST_WAKE_MS + PowerControl.TEST_GRACE_MS + 60_000L
+        var done: Pair<String, ScreenOffResult>? = null
+        while (done == null && SystemClock.elapsedRealtime() < giveUpAt) {
+            delay(2_000)
+            done = PowerControl.takeResult(this)
+        }
+        val (id, result) = done ?: return
+        // After a minute with the panel off the connection may need a moment to come back.
+        repeat(30) { if (link?.connected != true) delay(1_000) }
+        link?.sendAck(id, result.works, result.problem)
+        link?.sendHeartbeat()
+    }
+
+    private suspend fun runCommand(commandId: String, type: String, params: JSONObject?) {
         val l = link
         when (type) {
             "reload" -> {
@@ -745,14 +826,40 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 }
             }
             "screenOffTest" -> {
-                offWatch.expect(30_000)
-                val result = ScreenOff.test(this@MainActivity)
-                if (result == null) {
+                offWatch.expect(PowerControl.TEST_WAKE_MS + PowerControl.TEST_GRACE_MS)
+                if (!PowerControl.startTest(this@MainActivity, commandId)) {
                     l?.sendAck(commandId, false, "Kiosk mode is not set up: the app cannot switch the screen off")
                     return
                 }
-                Capabilities.learn(this@MainActivity, Capabilities.KEY_SCREEN_OFF, result.works)
-                l?.sendAck(commandId, result.works, result.problem)
+                finishScreenOffTest()
+            }
+            "reboot" -> {
+                if (!PowerControl.canReboot(this@MainActivity)) {
+                    l?.sendAck(commandId, false, if (Kiosk.isOwner(this@MainActivity)) "This TV does not allow the app to restart it" else "Kiosk mode is not set up: the app cannot restart the TV")
+                    return
+                }
+                offWatch.expect(5 * 60_000L)
+                // The TV refuses at once or starts shutting down; answer in the seconds that are left.
+                if (PowerControl.reboot(this@MainActivity)) {
+                    l?.sendAck(commandId, true)
+                } else {
+                    l?.sendAck(commandId, false, "The TV refused to restart")
+                    l?.sendHeartbeat()
+                }
+            }
+            "mute", "unmute" -> {
+                val problem = AudioControl.setMuted(this@MainActivity, type == "mute")
+                l?.sendAck(commandId, problem == null, problem)
+                l?.sendHeartbeat()
+            }
+            "volume" -> {
+                val level = params?.optInt("level", -1) ?: -1
+                if (level !in 0..100) {
+                    l?.sendAck(commandId, false, "No volume level in the command")
+                    return
+                }
+                val problem = AudioControl.setVolume(this@MainActivity, level)
+                l?.sendAck(commandId, problem == null, problem)
                 l?.sendHeartbeat()
             }
             "kioskUnlock" -> {
@@ -900,6 +1007,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 ),
             )
             .put("capabilities", JSONObject(heartbeatJson.encodeToString(Capabilities.report(this))))
+            .put("status", DeviceStatus.report(this, nightMode))
             .put("crash", crashes.report()?.let { JSONObject(heartbeatJson.encodeToString(it)) } ?: JSONObject.NULL)
             .put("sync", syncReport())
             // Videos this TV cannot play (its decoder refused them), so head office knows why (DC3).
@@ -1013,6 +1121,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
         SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(ms)
 
     companion object {
+        /** On an intent from a wake alarm: the panel may be switched on. */
+        const val EXTRA_WAKE = "wake"
         private val heartbeatJson = kotlinx.serialization.json.Json { encodeDefaults = true }
         /** True while the activity is on screen; read by the watchdog. */
         @Volatile

@@ -1,11 +1,12 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { COMMAND_REPLY_SEC, type RemoteCommandType, type ScreenCommandEntry } from '@darpan/shared';
+import { COMMAND_REPLY_SEC, SCREEN_OFF_TEST_REPLY_SEC, commandUnsupported, type RemoteCommandType, type ScreenCommandEntry } from '@darpan/shared';
 import sharp from 'sharp';
 import { unlink } from 'fs/promises';
 import type { Subscription } from 'rxjs';
 import { AuditService } from '../audit/audit.service';
 import type { AuthUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { cleanCapabilities } from './capabilities';
 import { STORAGE, type StorageDriver } from '../storage/storage.types';
 import { DevicesGateway } from './devices.gateway';
 
@@ -78,10 +79,23 @@ export class CommandsService implements OnModuleInit, OnModuleDestroy {
    * [type] is a dashboard command, or one of the kiosk release commands, which only KioskService
    * sends (super admin, fresh two-step code). [extra] goes into the audit row, e.g. the reason.
    */
-  async send(screenId: string, type: RemoteCommandType | 'kioskExit' | 'kioskRemoveOwner', user: AuthUser, ip?: string, extra?: Record<string, string>): Promise<ScreenCommandEntry[]> {
-    const screen = await this.prisma.screen.findUnique({ where: { id: screenId }, select: { id: true, name: true, status: true } });
+  async send(
+    screenId: string,
+    type: RemoteCommandType | 'kioskExit' | 'kioskRemoveOwner',
+    user: AuthUser,
+    ip?: string,
+    extra?: Record<string, string>,
+    params?: Record<string, number>,
+  ): Promise<ScreenCommandEntry[]> {
+    const screen = await this.prisma.screen.findUnique({ where: { id: screenId }, select: { id: true, name: true, status: true, capabilities: true } });
     if (!screen) throw new NotFoundException('Screen not found');
     if (screen.status === 'PENDING') throw new ConflictException('Pair this screen before sending it commands.');
+    if (type === 'volume' && !(Number.isInteger(params?.level) && params!.level >= 0 && params!.level <= 100)) {
+      throw new BadRequestException('Volume must be a whole number from 0 to 100');
+    }
+    // What this TV reported it cannot do is refused here, not left to fail on the TV.
+    const unsupported = commandUnsupported(type, cleanCapabilities(screen.capabilities));
+    if (unsupported) throw new ConflictException(unsupported);
     if (!(await this.gateway.isConnected(screenId))) {
       throw new ConflictException('The TV is not connected right now. Commands only reach a TV that is online.');
     }
@@ -105,13 +119,13 @@ export class CommandsService implements OnModuleInit, OnModuleDestroy {
     // Marked SENT before it goes out: a fast TV can reply before emit() returns, and that reply must not be overwritten.
     let cmd;
     try {
-      cmd = await this.prisma.deviceCommand.create({ data: { screenId, type, issuedById: user.id, status: 'SENT', sentAt: new Date() } });
+      cmd = await this.prisma.deviceCommand.create({ data: { screenId, type, params, issuedById: user.id, status: 'SENT', sentAt: new Date() } });
     } catch (err) {
       // Two admins at the same moment: the database keeps one live command of each type (K8).
       if ((err as { code?: string }).code === 'P2002') return this.list(screenId);
       throw err;
     }
-    const sent = await this.gateway.sendCommand(screenId, { commandId: cmd.id, type });
+    const sent = await this.gateway.sendCommand(screenId, { commandId: cmd.id, type, ...(params ? { params } : {}) });
     if (!sent) {
       await this.prisma.deviceCommand.updateMany({
         where: { id: cmd.id, status: 'SENT' },
@@ -123,7 +137,7 @@ export class CommandsService implements OnModuleInit, OnModuleDestroy {
       action: `screen.command.${type}`,
       entityType: 'Screen',
       entityId: screenId,
-      details: { commandId: cmd.id, screen: screen.name, ...extra },
+      details: { commandId: cmd.id, screen: screen.name, ...extra, ...params },
       ipAddress: ip,
     });
     return this.list(screenId);
@@ -198,10 +212,21 @@ export class CommandsService implements OnModuleInit, OnModuleDestroy {
 
   /** Commands with no reply long after they were sent: the TV went away or its app predates the command. */
   private async expireStale(screenId: string): Promise<void> {
+    const live = { screenId, status: { in: ['PENDING', 'SENT'] as ('PENDING' | 'SENT')[] } };
+    const before = (sec: number) => new Date(Date.now() - sec * 1000);
     const n = await this.prisma.deviceCommand.updateMany({
-      where: { screenId, status: { in: ['PENDING', 'SENT'] }, createdAt: { lt: new Date(Date.now() - COMMAND_REPLY_SEC * 1000) } },
+      where: { ...live, type: { not: 'screenOffTest' }, createdAt: { lt: before(COMMAND_REPLY_SEC) } },
       data: { status: 'FAILED', completedAt: new Date(), result: { error: 'No reply from the TV' } },
     });
-    if (n.count) this.logger.log(`${n.count} command(s) to screen ${screenId} got no reply`);
+    // The test waits for the TV to wake by itself; silence means it did not (or it went offline).
+    const t = await this.prisma.deviceCommand.updateMany({
+      where: { ...live, type: 'screenOffTest', createdAt: { lt: before(SCREEN_OFF_TEST_REPLY_SEC) } },
+      data: {
+        status: 'FAILED',
+        completedAt: new Date(),
+        result: { error: 'No reply: the TV probably did not come back on by itself. Panel-off stays unused; nights stay black.' },
+      },
+    });
+    if (n.count + t.count) this.logger.log(`${n.count + t.count} command(s) to screen ${screenId} got no reply`);
   }
 }

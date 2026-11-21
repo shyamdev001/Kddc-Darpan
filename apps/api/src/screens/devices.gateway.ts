@@ -17,7 +17,7 @@ import { AuditService } from '../audit/audit.service';
 import { ContentEvents } from '../events/content-events';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { cleanCapabilities, cleanUnplayable, screenFacts, tvOffRecord } from './capabilities';
+import { cleanCapabilities, cleanTvStatus, cleanUnplayable, screenFacts, tvOffRecord } from './capabilities';
 import { cleanPlaySync } from './play-sync';
 import { crashReport } from './crash-report';
 import { hashDeviceToken } from './device-auth';
@@ -170,6 +170,7 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     const caps = cleanCapabilities(body.capabilities);
     // Left out when the TV has nothing to say: keep the last report (it ages out on the screen page).
     const tvOff = tvOffRecord(body.tvOff, Date.now());
+    const tvStatus = cleanTvStatus(body.status, Date.now());
     await this.prisma.screen.updateMany({
       where: { id: screenId },
       data: {
@@ -198,6 +199,8 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
         ...(typeof body.rescueMode === 'boolean' ? { rescueMode: body.rescueMode } : {}),
         ...(typeof body.kioskPinSet === 'boolean' ? { kioskPinSet: body.kioskPinSet } : {}),
         ...(caps ? { capabilities: caps as unknown as Prisma.InputJsonObject } : {}),
+        // Older app versions send no status: leave what we had.
+        ...(tvStatus ? { tvStatus: tvStatus as unknown as Prisma.InputJsonObject } : {}),
         // Older app versions send no sync report: leave what we had.
         ...(cleanPlaySync(body.sync) ? { playSync: cleanPlaySync(body.sync) as unknown as Prisma.InputJsonObject } : {}),
         ...('crash' in body ? { lastCrash: (crashReport(body.crash) as Prisma.InputJsonObject | null) ?? Prisma.DbNull } : {}),

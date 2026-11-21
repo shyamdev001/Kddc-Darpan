@@ -22,7 +22,15 @@ There is no Android Studio on the dev machine: GitHub Actions builds the APK
    and uploaded every hour to `POST /api/devices/playlogs`. The dashboard's Proof of play page reads it.
 9. Kiosk mode when the app is the TV's device owner (setup below): pinned to Darpan, a watchdog, and a
    15-minute maintenance unlock from the dashboard (`kioskUnlock` / `kioskLock` commands).
-10. App updates (OTA): upload the built APK on the dashboard's App updates page. It goes to the ticked
+10. Outside display hours (TV control): the screen is black at the lowest backlight and the panel stays on,
+so it is surely on at opening time. Only a device-owner TV that passed **Test screen off** (panel off, then
+an exact alarm must switch it back on by itself a minute later) switches its panel off at night, with an
+alarm for the next on time. Switching a TV on from deep standby or from mains-off is not possible from an
+app: use the TV's own on/off timer. The dashboard can also restart the whole TV (device owner, Android 7+)
+and set the volume or mute (where the TV lets Android set it); buttons for what a TV cannot do are greyed
+out with the reason. `tools/tv-control-check.sh <tv-address>` checks a TV model over adb.
+
+App updates (OTA): upload the built APK on the dashboard's App updates page. It goes to the ticked
     test screens first; "Release to all screens" sends it everywhere. A TV waits a random 0-10 minutes,
     downloads it (resumable), checks its SHA-256 and installs it silently, then restarts into the new
     version. Silent install needs kiosk mode (device owner); other TVs show the new version on the
@@ -103,7 +111,7 @@ Crashes:
 While locked, the app also (K6, K11): blocks safe boot, USB sticks and USB file transfer (allowed during
 maintenance), blocks adding users, keeps the power menu but not Home or Recents, lets firmware updates
 install only between 01:00 and 04:00, turns on automatic time and sets Android's sleep timeout to 10
-minutes (that timeout is what turns the screen off outside display hours). It never blocks factory reset.
+minutes. It never blocks factory reset.
 Installing from unknown sources is not blocked yet: first check on a real TV that our own updates still
 install with it set.
 

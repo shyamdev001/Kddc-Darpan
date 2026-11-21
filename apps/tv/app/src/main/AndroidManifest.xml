@@ -8,6 +8,12 @@
     <!-- "Test screen off": keep running while the panel is off, then switch it back on. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Panel off at night: an exact alarm switches it on again at the on time (TV control A).
+         USE_EXACT_ALARM is granted on Android 13+; older versions use SCHEDULE_EXACT_ALARM. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
     <!-- App updates (OTA): silent install works only while the app is device owner (kiosk mode). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -72,6 +78,10 @@
 
         <receiver
             android:name=".UpdateReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".WakeReceiver"
             android:exported="false" />
 
         <receiver

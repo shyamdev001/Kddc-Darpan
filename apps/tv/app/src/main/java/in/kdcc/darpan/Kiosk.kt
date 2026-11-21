@@ -229,11 +229,12 @@ object Kiosk {
     }
 
     /** Opens Darpan over whatever is on screen (the TV's settings after maintenance). */
-    fun bringToFront(context: Context) {
+    fun bringToFront(context: Context, wake: Boolean = false) {
         try {
             context.startActivity(
                 Intent(context, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    .putExtra(MainActivity.EXTRA_WAKE, wake),
             )
         } catch (e: Exception) {
             Log.w(TAG, "Could not bring the app to the front", e)

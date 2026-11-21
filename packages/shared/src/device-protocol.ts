@@ -179,6 +179,26 @@ export interface HeartbeatPayload {
    */
   tvOff?: { kind: TvOffKind; agoSec: number; backAgoSec: number | null; count: number };
   sync?: PlaySyncReport;
+  /** The TV's own state (TV control E); every field may be null. */
+  status?: TvStatusPayload;
+}
+
+export const NIGHT_MODES = ['black', 'panelOff'] as const;
+export type NightMode = (typeof NIGHT_MODES)[number];
+export const TV_NETWORK_TYPES = ['ethernet', 'wifi', 'cellular', 'other', 'none'] as const;
+export type TvNetworkType = (typeof TV_NETWORK_TYPES)[number];
+
+export interface TvStatusPayload {
+  screenOn: boolean | null;
+  uptimeSec: number | null;
+  ip: string | null;
+  networkType: TvNetworkType | null;
+  thermal: string | null;
+  bootReason: string | null;
+  lastExit: { reason: string; agoSec: number } | null;
+  volume: number | null;
+  muted: boolean | null;
+  nightMode: NightMode | null;
 }
 
 /**
@@ -206,6 +226,10 @@ export interface TvCapabilities {
   screenOff: boolean | null;
   /** Screenshots show video; false = the video area comes out black on this model. */
   videoInScreenshot: boolean | null;
+  /** Remote reboot can work: device owner on Android 7+; false once the TV refused. null = app too old. */
+  reboot: boolean | null;
+  /** Volume and mute: false on fixed-volume TVs or when a change did not stick; null = not tried yet. */
+  volume: boolean | null;
   /** Who made it and what it runs. null = app too old to say. */
   device: TvDeviceFacts | null;
   /** The picture Android draws (width x height) and the panel behind it. */
@@ -288,8 +312,14 @@ export type DeviceCommandType =
   | 'kioskExit'
   /** Out of kiosk mode and no longer device owner; one-way (super admin with a fresh two-step code only). */
   | 'kioskRemoveOwner'
-  /** Switch the panel off for 10 s and back on: finds out whether this TV model can sleep at night. */
+  /** Panel off, CPU let go, an alarm a minute later must switch it on: may this model sleep at night? */
   | 'screenOffTest'
+  /** Device-owner reboot (Android 7+). */
+  | 'reboot'
+  | 'mute'
+  | 'unmute'
+  /** params.level: 0 to 100. */
+  | 'volume'
   | 'emergency:show'
   | 'emergency:clear';
 

@@ -1,8 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { KIOSK_MAINTENANCE_MIN, type KioskReleaseAction, type KioskState, type RemoteCommandType, type ScreenCommandEntry, type ScreenDetail } from "@darpan/shared";
-import { Camera, DoorOpen, Eraser, Loader2, Lock, LockOpen, MoonStar, Power, RefreshCw } from "lucide-react";
+import {
+  KIOSK_MAINTENANCE_MIN,
+  commandUnsupported,
+  type KioskReleaseAction,
+  type KioskState,
+  type RemoteCommandType,
+  type ScreenCommandEntry,
+  type ScreenDetail,
+} from "@darpan/shared";
+import { Camera, DoorOpen, Eraser, Loader2, Lock, LockOpen, MoonStar, Power, RefreshCw, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -27,6 +35,10 @@ const LABEL: Record<string, string> = {
   kioskUnlock: "Unlock for maintenance",
   kioskLock: "Lock",
   screenOffTest: "Test screen off",
+  reboot: "Restart TV",
+  mute: "Mute",
+  unmute: "Unmute",
+  volume: "Set volume",
   kioskExit: "Take out of kiosk mode",
   kioskRemoveOwner: "Remove device owner",
 };
@@ -52,14 +64,38 @@ const ACTIONS: { type: RemoteCommandType; icon: typeof RefreshCw; text: string; 
   { type: "screenshot", icon: Camera, text: "Take screenshot", hint: "See what the TV shows right now" },
   { type: "reload", icon: RefreshCw, text: "Reload content", hint: "Fetch the playlist again" },
   { type: "restart", icon: Power, text: "Restart app", hint: "Close and reopen the app" },
+  { type: "reboot", icon: RotateCcw, text: "Restart TV", hint: "Restart the whole TV; back in about two minutes" },
   { type: "clearCache", icon: Eraser, text: "Clear files", hint: "Delete saved files and download them again" },
   {
     type: "screenOffTest",
     icon: MoonStar,
     text: "Test screen off",
-    hint: "Panel off for 10 seconds, then on: can this TV sleep at night?",
+    hint: "Panel off, then a minute later the TV must switch itself back on: can it sleep at night?",
   },
 ];
+
+/** These ask first: they interrupt what the branch sees. */
+const CONFIRM: Partial<Record<RemoteCommandType, { title: string; body: string; yes: string; no: string; danger?: boolean }>> = {
+  clearCache: {
+    title: "Clear downloaded files",
+    body: "The TV deletes every poster and video it has saved and downloads them again. Until the downloads finish it may show nothing. Use this when a file looks broken on screen.",
+    yes: "Clear and download again",
+    no: "Keep files",
+    danger: true,
+  },
+  reboot: {
+    title: "Restart the TV",
+    body: "The whole TV restarts. The screen is dark for one to three minutes, then Darpan starts by itself. Use this when the TV is slow or stuck, after a restart of the app did not help.",
+    yes: "Restart TV",
+    no: "Cancel",
+  },
+  screenOffTest: {
+    title: "Test screen off",
+    body: "The panel switches off and the TV is left to sleep; a minute later it must switch itself back on. On some models it stays dark until someone presses power, so run this when someone at the branch can do that. The answer can take up to eight minutes.",
+    yes: "Run the test",
+    no: "Cancel",
+  },
+};
 
 const waiting = (c: ScreenCommandEntry) => c.status === "PENDING" || c.status === "SENT";
 
@@ -73,7 +109,7 @@ function statusText(c: ScreenCommandEntry): { text: string; tone: string } {
 export function RemoteCard({ screen }: { screen: ScreenDetail }) {
   const [list, setList] = useState<ScreenCommandEntry[] | null>(null);
   const [sending, setSending] = useState<RemoteCommandType | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirm, setConfirm] = useState<RemoteCommandType | null>(null);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const me = useSessionUser();
   const [error, setError] = useState<string | null>(null);
@@ -97,11 +133,11 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
     return () => clearInterval(t);
   }, [screen.id, busy, accept]);
 
-  async function send(type: RemoteCommandType) {
+  async function send(type: RemoteCommandType, level?: number) {
     setSending(type);
     setError(null);
     try {
-      accept(await apiFetch<ScreenCommandEntry[]>(`/api/screens/${screen.id}/commands`, { method: "POST", body: JSON.stringify({ type }) }));
+      accept(await apiFetch<ScreenCommandEntry[]>(`/api/screens/${screen.id}/commands`, { method: "POST", body: JSON.stringify({ type, level }) }));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -112,6 +148,8 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
   const shotPending = list?.some((c) => c.type === "screenshot" && waiting(c)) ?? false;
   const offline = !screen.online || !screen.paired;
   const kiosk = kioskNow(screen, list, now);
+  // Greyed out with the reason below: what this TV reported it cannot do (or an app too old to know).
+  const notes = unsupportedNotes(screen);
   const kioskBusy = sending === "kioskUnlock" || sending === "kioskLock" || (list?.some((c) => (c.type === "kioskUnlock" || c.type === "kioskLock") && waiting(c)) ?? false);
 
   return (
@@ -149,13 +187,15 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
         <div className="grid grid-cols-2 gap-2">
           {ACTIONS.map(({ type, icon: Icon, text, hint }) => {
             const inFlight = sending === type || (list?.some((c) => c.type === type && waiting(c)) ?? false);
+            const why = commandUnsupported(type, screen.capabilities);
             return (
               <Button
                 key={type}
                 variant="outline"
-                aria-description={hint}
-                disabled={offline || sending !== null || inFlight}
-                onClick={() => (type === "clearCache" ? setConfirmClear(true) : void send(type))}
+                aria-description={why ?? hint}
+                title={why ?? undefined}
+                disabled={offline || sending !== null || inFlight || why !== null}
+                onClick={() => (CONFIRM[type] ? setConfirm(type) : void send(type))}
                 className={`h-10 justify-start px-3 ${type === "clearCache" ? "text-destructive hover:text-destructive" : ""}`}
               >
                 {inFlight ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Icon data-icon="inline-start" />}
@@ -164,6 +204,23 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
             );
           })}
         </div>
+
+        <SoundRow
+          screen={screen}
+          disabled={offline || sending !== null}
+          busy={list?.some((c) => (c.type === "mute" || c.type === "unmute" || c.type === "volume") && waiting(c)) ?? false}
+          onSend={(type, level) => void send(type, level)}
+        />
+
+        {notes.length > 0 && (
+          <ul className="grid gap-1 text-xs text-muted-foreground" aria-label="Not available on this TV">
+            {notes.map(([label, why]) => (
+              <li key={label}>
+                <span className="font-medium text-foreground">{label}:</span> {why}
+              </li>
+            ))}
+          </ul>
+        )}
 
         <KioskRow state={kiosk.state} until={kiosk.until} busy={kioskBusy} disabled={offline || sending !== null} onSend={(t) => void send(t)} />
 
@@ -211,28 +268,30 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
         )}
       </div>
 
-      <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear downloaded files on “{screen.name}”?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The TV deletes every poster and video it has saved and downloads them again. Until the downloads finish it may show
-              nothing. Use this when a file looks broken on screen.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep files</AlertDialogCancel>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setConfirmClear(false);
-                void send("clearCache");
-              }}
-            >
-              Clear and download again
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+      <AlertDialog open={confirm !== null} onOpenChange={(o) => !o && setConfirm(null)}>
+        {confirm && CONFIRM[confirm] && (
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {CONFIRM[confirm]!.title} on “{screen.name}”?
+              </AlertDialogTitle>
+              <AlertDialogDescription>{CONFIRM[confirm]!.body}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{CONFIRM[confirm]!.no}</AlertDialogCancel>
+              <Button
+                variant={CONFIRM[confirm]!.danger ? "destructive" : "default"}
+                onClick={() => {
+                  const type = confirm;
+                  setConfirm(null);
+                  void send(type);
+                }}
+              >
+                {CONFIRM[confirm]!.yes}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        )}
       </AlertDialog>
 
       {releaseOpen && (
@@ -247,6 +306,75 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
         />
       )}
     </section>
+  );
+}
+
+/** The commands this TV reported it cannot take, with the reason, for the note under the buttons. */
+function unsupportedNotes(screen: ScreenDetail): [string, string][] {
+  const out: [string, string][] = [];
+  for (const [type, label] of [
+    ["reboot", "Restart TV"],
+    ["volume", "Volume and mute"],
+    ["screenOffTest", "Test screen off"],
+  ] as const) {
+    const why = commandUnsupported(type, screen.capabilities);
+    if (why) out.push([label, why]);
+  }
+  return out;
+}
+
+const STEPS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
+/** Mute, unmute and a volume level, when this TV lets Android set its volume. */
+function SoundRow({
+  screen,
+  disabled,
+  busy,
+  onSend,
+}: {
+  screen: ScreenDetail;
+  disabled: boolean;
+  busy: boolean;
+  onSend: (type: RemoteCommandType, level?: number) => void;
+}) {
+  const status = screen.tvStatus;
+  const [level, setLevel] = useState<number>(status?.volume ?? 50);
+  if (commandUnsupported("volume", screen.capabilities)) return null; // listed in the note instead
+  const muted = status?.muted === true;
+  return (
+    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-mist/60 px-3 py-2">
+      <Button
+        variant="outline"
+        disabled={disabled || busy}
+        onClick={() => onSend(muted ? "unmute" : "mute")}
+        className="h-10 px-3"
+        aria-description={muted ? "Turn the TV's sound back on" : "Silence the TV"}
+      >
+        {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : muted ? <Volume2 data-icon="inline-start" /> : <VolumeX data-icon="inline-start" />}
+        {muted ? "Unmute" : "Mute"}
+      </Button>
+      <label className="grid gap-1 text-xs text-muted-foreground">
+        <span>
+          Volume {level}%
+          {status?.volume !== null && status?.volume !== undefined && status.volume !== level ? ` (now ${status.volume}%)` : ""}
+        </span>
+        <select
+          className="h-8 rounded-md border bg-card px-2 text-sm text-foreground"
+          value={level}
+          disabled={disabled || busy}
+          onChange={(e) => setLevel(Number(e.target.value))}
+        >
+          {STEPS.map((s) => (
+            <option key={s} value={s}>
+              {s}%
+            </option>
+          ))}
+        </select>
+      </label>
+      <Button variant="outline" disabled={disabled || busy || level === status?.volume} onClick={() => onSend("volume", level)} className="h-10 px-3">
+        Set
+      </Button>
+    </div>
   );
 }
 

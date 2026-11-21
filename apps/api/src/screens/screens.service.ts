@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { cleanCapabilities, cleanUnplayable, recentTvOff } from './capabilities';
+import { cleanCapabilities, cleanUnplayable, recentTvOff, storedTvStatus } from './capabilities';
 import { cleanPlaySync } from './play-sync';
 import { crashReport } from './crash-report';
 import {
@@ -64,6 +64,7 @@ const NEW_TV_STATE = {
   rescueMode: false,
   kioskPinSet: null,
   capabilities: Prisma.DbNull,
+  tvStatus: Prisma.DbNull,
   playSync: Prisma.DbNull,
   broadcastId: null,
   broadcastStatus: null,
@@ -361,6 +362,7 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
       tvOff: recentTvOff(s.tvOff, Date.now()),
       unplayable: reported.flatMap((u) => (mediaName.has(u.mediaId) ? [{ mediaId: u.mediaId, name: mediaName.get(u.mediaId)!, reason: u.reason }] : [])),
       capabilities: cleanCapabilities(s.capabilities),
+      tvStatus: storedTvStatus(s.tvStatus),
       playSync: cleanPlaySync(s.playSync),
       syncPlayback: s.branch?.syncPlayback ?? false,
       pairedAt: s.pairedAt?.toISOString() ?? null,

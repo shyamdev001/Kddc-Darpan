@@ -1,5 +1,5 @@
 import type { DisplayHoursValue, TimeSlot } from './schedule';
-import type { PlaySyncReport, TvCapabilities } from './device-protocol';
+import type { NightMode, PlaySyncReport, TvCapabilities, TvNetworkType } from './device-protocol';
 // Dashboard view of screens (TVs). Device-side shapes live in device-protocol.ts.
 import type { Orientation } from './enums';
 
@@ -191,6 +191,8 @@ export interface ScreenDetail extends ScreenSummary {
   tvOff: TvOffReport | null;
   /** What the TV says it can do; null for app versions that do not report it. */
   capabilities: TvCapabilities | null;
+  /** Screen on/off, uptime, network, temperature, volume...; null for app versions that do not report it. */
+  tvStatus: TvStatusReport | null;
   /** How the TV keeps to the shared timeline; null for app versions that do not report it. */
   playSync: PlaySyncReport | null;
   /** Its branch keeps screens in step. */
@@ -255,12 +257,61 @@ export interface ScreensChangedPayload {
 export const PAIRING_CODE_TTL_MS = 30 * 60_000;
 
 /** Commands the dashboard can send to one TV. */
-export const REMOTE_COMMANDS = ['reload', 'restart', 'clearCache', 'screenshot', 'kioskUnlock', 'kioskLock', 'screenOffTest'] as const;
+export const REMOTE_COMMANDS = ['reload', 'restart', 'clearCache', 'screenshot', 'kioskUnlock', 'kioskLock', 'screenOffTest', 'reboot', 'mute', 'unmute', 'volume'] as const;
 export type RemoteCommandType = (typeof REMOTE_COMMANDS)[number];
 
 /** POST /api/screens/:id/commands */
 export interface SendCommandRequest {
   type: RemoteCommandType;
+  /** For "volume" only: 0 to 100. */
+  level?: number;
+}
+
+/**
+ * Why [type] cannot work on this TV, from what it last reported; null = it may (the TV still has
+ * the last word). Used by the server to refuse and by the dashboard to grey the button out.
+ * The reboot and volume capabilities arrived in the same app version, so a missing `reboot` means
+ * an app too old for any of the four new commands.
+ */
+export function commandUnsupported(type: string, caps: TvCapabilities | null): string | null {
+  const tooOld = 'Update the TV app first: this version does not know this command.';
+  switch (type) {
+    case 'screenOffTest':
+      return caps && !caps.deviceOwner ? 'Kiosk mode is not set up on this TV: the app cannot switch the screen off.' : null;
+    case 'reboot':
+      if (!caps || caps.reboot === null || caps.reboot === undefined) return tooOld;
+      if (!caps.deviceOwner) return 'Kiosk mode is not set up on this TV: the app cannot restart it.';
+      if (caps.sdk < 24) return 'Restarting the TV from the app needs Android 7 or newer.';
+      return caps.reboot ? null : 'This TV model refused a restart from the app. Use its power button.';
+    case 'mute':
+    case 'unmute':
+    case 'volume':
+      if (!caps || caps.reboot === null || caps.reboot === undefined) return tooOld;
+      return caps.volume === false ? 'This TV sets its volume itself; Android cannot change it. Use the TV remote.' : null;
+    default:
+      return null;
+  }
+}
+
+/** The TV's own state, from its heartbeat (TV control E). null fields: this model does not say. */
+export interface TvStatusReport {
+  screenOn: boolean | null;
+  /** When the TV last started, by the server's clock. */
+  bootedAt: string | null;
+  ip: string | null;
+  networkType: TvNetworkType | null;
+  /** Android's thermal status (Android 10+): none, light, moderate, severe, critical, emergency, shutdown. */
+  thermal: string | null;
+  /** Why Android last started, where the firmware says (e.g. "reboot", "cold_boot", "watchdog"). */
+  bootReason: string | null;
+  /** Why the app's previous run ended (Android 11+), e.g. "crash", "lowMemory", "signaled". */
+  lastExit: { reason: string; at: string } | null;
+  /** Media volume in percent. */
+  volume: number | null;
+  muted: boolean | null;
+  /** Outside display hours: black at the lowest backlight, or the panel off. null in hours. */
+  nightMode: NightMode | null;
+  reportedAt: string;
 }
 
 /**
@@ -316,3 +367,6 @@ export interface ScreenCommandEntry {
 }
 
 export const COMMAND_REPLY_SEC = 90;
+/** The screen-off test waits for the TV to wake by itself, and gives up after about 7 minutes. */
+export const SCREEN_OFF_TEST_REPLY_SEC = 480;
+export const commandReplySec = (type: string): number => (type === 'screenOffTest' ? SCREEN_OFF_TEST_REPLY_SEC : COMMAND_REPLY_SEC);

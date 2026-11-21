@@ -154,6 +154,7 @@ model Screen {
   rescueMode      Boolean   @default(false) // still crashing in safe mode: default slide only, keeps syncing and updating (K2)
   kioskPinSet     Boolean? // the TV holds the kiosk PIN; null = app too old to say
   capabilities    Json? // what this TV model can do (WebView, decoders, brightness, screen-off...), from the TV
+  tvStatus        Json? // screen on/off, boot time, IP, network, thermal, volume, night mode, from the heartbeat
   playSync        Json? // how well the TV keeps to the shared timeline (mode, clock error, video drift), from the heartbeat
   broadcastId     String?   @db.Uuid // the broadcast the TV says it is showing (no FK: it may be deleted)
   broadcastStatus String? // playing | loading | error: ..., from the heartbeat
@@ -413,8 +414,8 @@ model PlayDaily {
 model DeviceCommand {
   id          String        @id @default(uuid()) @db.Uuid
   screenId    String        @db.Uuid
-  type        String // restart | reload | screenshot | clearCache | kioskUnlock | kioskLock | emergency:show | emergency:clear
-  params      Json?
+  type        String // restart | reload | screenshot | clearCache | kioskUnlock | kioskLock | screenOffTest | reboot | mute | unmute | volume | ...
+  params      Json? // volume: {level}
   status      CommandStatus @default(PENDING)
   result      Json?
   issuedById  String?       @db.Uuid

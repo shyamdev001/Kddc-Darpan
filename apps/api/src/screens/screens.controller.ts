@@ -85,7 +85,7 @@ export class ScreensController {
   @Roles('HO_ADMIN')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   sendCommand(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SendCommandDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
-    return this.commands.send(id, dto.type, user, req.ip);
+    return this.commands.send(id, dto.type, user, req.ip, undefined, dto.type === 'volume' ? { level: dto.level! } : undefined);
   }
 
   /** Out of kiosk mode, or out of device owner too (K7). Super admins only, with a fresh two-step code. */

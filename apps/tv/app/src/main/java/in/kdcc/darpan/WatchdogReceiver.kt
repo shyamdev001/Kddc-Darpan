@@ -16,6 +16,9 @@ import android.util.Log
 class WatchdogReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (MainActivity.visible || !Kiosk.holds(context)) return
+        // A dark panel (night, or the power key) is not "something else on screen"; opening the
+        // app would only wake it on some models.
+        if (!PowerControl.screenOn(context)) return
         // After a crash the app waits before it runs again (K2); opening it now would skip that wait.
         if ((DarpanApp.crashes(context)?.coolDownMs(SystemClock.elapsedRealtime()) ?: 0L) > 0L) return
         Log.i(TAG, "Darpan is not on screen; bringing it back")

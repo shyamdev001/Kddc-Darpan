@@ -36,7 +36,23 @@ object Brightness {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && Kiosk.isOwner(activity)) setSystem(activity, p)
     }
 
-    private fun setSystem(context: Context, p: Int?) {
+    /**
+     * Outside display hours on TVs that stay lit: the lowest backlight the app can ask for. The TV's
+     * own value is saved first, as for [apply]; [apply] afterwards sets the day value again. Not
+     * learned as a capability (a TV clamping 0 to its minimum is fine here).
+     */
+    fun night(activity: Activity) {
+        try {
+            val lp = activity.window.attributes
+            lp.screenBrightness = 0f
+            activity.window.attributes = lp
+        } catch (e: Exception) {
+            Log.w(TAG, "Window brightness not set", e)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && Kiosk.isOwner(activity)) setSystem(activity, 0, learn = false)
+    }
+
+    private fun setSystem(context: Context, p: Int?, learn: Boolean = true) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = Kiosk.admin(context)
@@ -55,7 +71,7 @@ object Brightness {
                 dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS, level.toString())
                 // Read it back: some TVs accept the setting but drive the backlight from their own menu.
                 val now = Settings.System.getInt(resolver, Settings.System.SCREEN_BRIGHTNESS, -1)
-                Capabilities.learn(context, Capabilities.KEY_BRIGHTNESS, kotlin.math.abs(now - level) <= 2)
+                if (learn) Capabilities.learn(context, Capabilities.KEY_BRIGHTNESS, kotlin.math.abs(now - level) <= 2)
             } else if (prefs.contains(KEY_ORIGINAL)) {
                 dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS, prefs.getInt(KEY_ORIGINAL, 128).toString())
                 dpm.setSystemSetting(admin, Settings.System.SCREEN_BRIGHTNESS_MODE, prefs.getInt(KEY_ORIGINAL_MODE, 0).toString())

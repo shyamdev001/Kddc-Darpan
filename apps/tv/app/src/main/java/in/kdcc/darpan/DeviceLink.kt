@@ -26,7 +26,7 @@ class DeviceLink(
     interface Listener {
         fun onManifestUpdated(version: String)
         /** A remote command; reply with [sendAck] (a screenshot replies by uploading). */
-        fun onCommand(commandId: String, type: String)
+        fun onCommand(commandId: String, type: String, params: JSONObject?)
         /** The server refused this token. May be temporary: keep playing (see [Repairer]). */
         fun onUnauthorized()
         /** Head office removed this screen: stop and forget the content. */
@@ -89,7 +89,8 @@ class DeviceLink(
             val data = args.firstOrNull() as? JSONObject
             val id = data?.optString("commandId") ?: ""
             val type = data?.optString("type") ?: ""
-            main.post { if (!closed) listener.onCommand(id, type) }
+            val params = data?.optJSONObject("params")
+            main.post { if (!closed) listener.onCommand(id, type, params) }
         })
         s.on(Socket.EVENT_CONNECT_ERROR, Emitter.Listener { args ->
             val message = when (val a = args.firstOrNull()) {

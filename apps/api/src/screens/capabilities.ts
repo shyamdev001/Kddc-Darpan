@@ -1,4 +1,4 @@
-import { TV_PLATFORMS, type TvCapabilities, type TvOffReport, type TvCodecSupport, type TvDeviceFacts, type TvDisplayFacts, type TvVideoFacts } from '@darpan/shared';
+import { NIGHT_MODES, TV_NETWORK_TYPES, TV_PLATFORMS, type TvStatusReport, type TvCapabilities, type TvOffReport, type TvCodecSupport, type TvDeviceFacts, type TvDisplayFacts, type TvVideoFacts } from '@darpan/shared';
 
 const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null);
 const text = (v: unknown, max: number): string | null => (typeof v === 'string' && v.length > 0 ? v.slice(0, max) : null);
@@ -123,7 +123,45 @@ export function cleanCapabilities(v: unknown): TvCapabilities | null {
     display: display(c.display),
     video: video(c.video),
     platform: (TV_PLATFORMS as readonly unknown[]).includes(c.platform) ? (c.platform as TvCapabilities['platform']) : null,
+    reboot: bool(c.reboot),
+    volume: bool(c.volume),
   };
+}
+
+const THERMAL = ['none', 'light', 'moderate', 'severe', 'critical', 'emergency', 'shutdown'];
+const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+const WORD = /^[A-Za-z0-9_.,:-]{1,60}$/;
+
+/**
+ * The heartbeat's status as stored (TV control E): known fields only, each checked; uptime and
+ * "seconds ago" become times by the server's clock. null when it is not a status object.
+ */
+export function cleanTvStatus(v: unknown, now: number): TvStatusReport | null {
+  const o = obj(v);
+  if (!o) return null;
+  const uptime = int(o.uptimeSec, 0, 10 * 365 * DAY_SEC);
+  const exit = obj(o.lastExit);
+  const exitAgo = int(exit?.agoSec, 0, 365 * DAY_SEC);
+  const exitReason = typeof exit?.reason === 'string' && WORD.test(exit.reason) ? exit.reason : null;
+  return {
+    screenOn: bool(o.screenOn),
+    bootedAt: uptime === null ? null : new Date(now - uptime * 1000).toISOString(),
+    ip: typeof o.ip === 'string' && IPV4.test(o.ip) ? o.ip : null,
+    networkType: (TV_NETWORK_TYPES as readonly unknown[]).includes(o.networkType) ? (o.networkType as TvStatusReport['networkType']) : null,
+    thermal: typeof o.thermal === 'string' && THERMAL.includes(o.thermal) ? o.thermal : null,
+    bootReason: typeof o.bootReason === 'string' && WORD.test(o.bootReason) ? o.bootReason : null,
+    lastExit: exitReason && exitAgo !== null ? { reason: exitReason, at: new Date(now - exitAgo * 1000).toISOString() } : null,
+    volume: int(o.volume, 0, 100),
+    muted: bool(o.muted),
+    nightMode: (NIGHT_MODES as readonly unknown[]).includes(o.nightMode) ? (o.nightMode as TvStatusReport['nightMode']) : null,
+    reportedAt: new Date(now).toISOString(),
+  };
+}
+
+/** A stored status, as the screen page shows it; null when unreadable. */
+export function storedTvStatus(v: unknown): TvStatusReport | null {
+  const o = obj(v);
+  return o && typeof o.reportedAt === 'string' ? (o as unknown as TvStatusReport) : null;
 }
 
 /**

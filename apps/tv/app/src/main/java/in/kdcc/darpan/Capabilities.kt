@@ -56,6 +56,10 @@ data class CapabilityReport(
     val video: VideoFacts?,
     /** "googletv", "androidtv" or "aosp" (Android without Google's TV services). */
     val platform: String?,
+    /** Remote reboot: device owner on Android 7+, false once the TV refused it. */
+    val reboot: Boolean? = null,
+    /** Volume and mute: false on fixed-volume TVs or when a change did not stick; null untried. */
+    val volume: Boolean? = null,
 )
 
 /**
@@ -96,6 +100,8 @@ object Capabilities {
             display = f.display,
             video = f.video,
             platform = f.platform,
+            reboot = PowerControl.canReboot(context),
+            volume = AudioControl.supported(context),
         )
     }
 
@@ -107,6 +113,14 @@ object Capabilities {
     const val KEY_BRIGHTNESS = "brightness"
     const val KEY_SCREEN_OFF = "screenOff"
     const val KEY_VIDEO_SCREENSHOT = "videoInScreenshot"
+    const val KEY_REBOOT = "reboot"
+    const val KEY_VOLUME = "volume"
+
+    /** What the app learned for [key]; null when it never found out. */
+    fun learned(context: Context, key: String): Boolean? {
+        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return if (p.contains(key)) p.getBoolean(key, false) else null
+    }
 
     private fun detectFixed(context: Context): Fixed =
         Fixed(webView(context), video(), device(), display(context), platform(context))

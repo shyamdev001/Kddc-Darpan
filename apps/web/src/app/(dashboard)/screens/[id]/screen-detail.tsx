@@ -358,9 +358,23 @@ function Capabilities({ caps }: { caps: ScreenDetail["capabilities"] }) {
       caps.brightness,
     ],
     [
-      "Screen off outside hours",
-      caps.screenOff === null ? "Not tested" : caps.screenOff ? "Works" : "Not possible: use the TV's own on/off timer",
+      "Panel off outside hours",
+      caps.screenOff === null
+        ? "Not tested: nights stay black at the lowest backlight"
+        : caps.screenOff
+          ? "Works: the panel switches off and back on by itself"
+          : "Not on this model: nights stay black at the lowest backlight",
       caps.screenOff,
+    ],
+    [
+      "Restart the TV from here",
+      caps.reboot === null ? "Needs a newer app" : caps.reboot ? "Works" : caps.deviceOwner ? "Refused by this TV" : "Needs kiosk mode",
+      caps.reboot,
+    ],
+    [
+      "Volume from here",
+      caps.volume === null ? "Not tried yet" : caps.volume ? "Works" : "Not on this model: use the TV remote",
+      caps.volume,
     ],
     [
       "Video in screenshots",
@@ -405,6 +419,67 @@ function Capabilities({ caps }: { caps: ScreenDetail["capabilities"] }) {
           </ul>
         </details>
       )}
+    </div>
+  );
+}
+
+const THERMAL_TEXT: Record<string, string> = {
+  none: "Normal",
+  light: "Warm",
+  moderate: "Warm: the TV may slow down",
+  severe: "Hot: the TV is slowing down",
+  critical: "Very hot",
+  emergency: "Very hot: about to switch off",
+  shutdown: "Switching off from heat",
+};
+const EXIT_TEXT: Record<string, string> = {
+  crash: "the app crashed",
+  nativeCrash: "the app crashed",
+  anr: "the app stopped responding",
+  lowMemory: "Android ran out of memory",
+  signaled: "Android stopped it",
+  exitSelf: "the app restarted itself",
+  userRequested: "it was stopped from settings",
+  excessiveResource: "it used too much power or memory",
+};
+
+/** The TV's own state from its last heartbeat (TV control E). */
+function TvStatus({ status, now }: { status: ScreenDetail["tvStatus"]; now: number }) {
+  if (!status) return null;
+  const rows: [string, string][] = [];
+  if (status.screenOn !== null) {
+    rows.push([
+      "Panel",
+      status.nightMode === "panelOff"
+        ? "Off for the night"
+        : status.nightMode === "black"
+          ? "Black for the night, lowest backlight"
+          : status.screenOn
+            ? "On"
+            : "Off",
+    ]);
+  }
+  if (status.bootedAt) rows.push(["Running since", `${formatAgo(status.bootedAt, now)}${status.bootReason ? ` (${status.bootReason})` : ""}`]);
+  if (status.ip || status.networkType) {
+    const kind = status.networkType === "ethernet" ? "Wired" : status.networkType === "wifi" ? "Wi-Fi" : status.networkType === "none" ? "Not connected" : status.networkType ?? "";
+    rows.push(["Address", [kind, status.ip].filter(Boolean).join(", ")]);
+  }
+  if (status.thermal) rows.push(["Temperature", THERMAL_TEXT[status.thermal] ?? status.thermal]);
+  if (status.volume !== null) rows.push(["Sound", status.muted ? `Muted (volume ${status.volume}%)` : `${status.volume}%`]);
+  if (status.lastExit) rows.push(["App last stopped", `${formatAgo(status.lastExit.at, now)}: ${EXIT_TEXT[status.lastExit.reason] ?? status.lastExit.reason}`]);
+  if (rows.length === 0) return null;
+  return (
+    <div className="border-t px-4 py-4 sm:px-5">
+      <h3 className="mb-2 text-sm font-semibold">TV status</h3>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className={cn("min-w-0 text-right", label === "Temperature" && status.thermal && !["none", "light"].includes(status.thermal) && "text-[#6b4a00]")}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-2 text-xs text-muted-foreground">Reported {formatAgo(status.reportedAt, now)}.</p>
     </div>
   );
 }
@@ -573,6 +648,7 @@ function DeviceCard({
           ))}
         </dl>
         <Capabilities caps={screen.capabilities} />
+        <TvStatus status={screen.tvStatus} now={now} />
       </section>
 
       {canEdit && <RemoteCard screen={screen} />}
