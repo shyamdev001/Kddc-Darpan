@@ -1007,7 +1007,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 ),
             )
             .put("capabilities", JSONObject(heartbeatJson.encodeToString(Capabilities.report(this))))
-            .put("status", DeviceStatus.report(this, nightMode))
+            .put("status", TvStatus.report(this, nightMode))
             .put("crash", crashes.report()?.let { JSONObject(heartbeatJson.encodeToString(it)) } ?: JSONObject.NULL)
             .put("sync", syncReport())
             // Videos this TV cannot play (its decoder refused them), so head office knows why (DC3).

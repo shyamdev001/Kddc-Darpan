@@ -90,9 +90,9 @@ class TvControlTest {
 
     @Test
     fun statusWords() {
-        assertEquals("severe", DeviceStatus.thermalWord(3))
-        assertNull(DeviceStatus.thermalWord(99))
-        assertEquals("lowMemory", DeviceStatus.exitWord(3))
-        assertEquals("unknown", DeviceStatus.exitWord(0))
+        assertEquals("severe", TvStatus.thermalWord(3))
+        assertNull(TvStatus.thermalWord(99))
+        assertEquals("lowMemory", TvStatus.exitWord(3))
+        assertEquals("unknown", TvStatus.exitWord(0))
     }
 }

@@ -15,7 +15,7 @@ import java.net.Inet4Address
  * The TV's own state for the screen page (docs/DEVICE_COMPATIBILITY.md, section 8). Every field may be
  * null: what a model does not report stays empty instead of being guessed.
  */
-object DeviceStatus {
+object TvStatus {
     /** Android's thermal status (API 29+) as a word. Pure. */
     fun thermalWord(status: Int): String? = when (status) {
         0 -> "none"
