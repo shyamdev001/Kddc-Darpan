@@ -1,0 +1,15 @@
+{
+  "version": "3f9a1c0d2e4b5a67",
+  "generatedAt": "2026-11-18T05:00:00.000Z",
+  "items": [
+    { "mediaId": "0b6c8a3e-1111-4000-8000-000000000001", "url": "http://server.test/api/devices/media/0b6c8a3e-1111-4000-8000-000000000001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 152000, "type": "IMAGE", "durationSec": 10, "validFrom": null, "validUntil": null },
+    { "mediaId": "0b6c8a3e-1111-4000-8000-000000000002", "url": "http://server.test/api/devices/media/0b6c8a3e-1111-4000-8000-000000000002", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size": 38000000, "type": "VIDEO", "durationSec": 30 }
+  ],
+  "playlists": [
+    { "id": "pl-1", "name": "Branch ads", "slots": [], "items": [{ "mediaId": "0b6c8a3e-1111-4000-8000-000000000001", "durationSec": 10 }, { "mediaId": "0b6c8a3e-1111-4000-8000-000000000002", "durationSec": 30 }] }
+  ],
+  "settings": { "orientation": "LANDSCAPE", "hours": { "days": [1, 2, 3, 4, 5, 6], "on": "10:00", "off": "18:00", "closedSaturdays": [2, 4], "brightness": null }, "sync": false },
+  "app": { "versionCode": 142, "versionName": "0.1.142", "url": "http://server.test/api/devices/app/x", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "size": 6100000 },
+  "broadcast": null,
+  "fallbackMediaId": "0b6c8a3e-1111-4000-8000-000000000001"
+}

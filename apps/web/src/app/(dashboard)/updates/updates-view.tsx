@@ -99,6 +99,11 @@ export function UpdatesView() {
                     {formatBytes(r.sizeBytes)}, uploaded {formatDay(r.createdAt)}
                     {r.uploadedBy && ` by ${r.uploadedBy}`}
                     {r.notes && <span className="block text-foreground">{r.notes}</span>}
+                    <span className="block">
+                      {r.installNow
+                        ? "TVs install it as soon as it is downloaded, even during display hours."
+                        : "TVs install it at a quiet moment: outside display hours with no broadcast on, or 1 to 4 am on TVs that are always on; within a day at the latest."}
+                    </span>
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {working === r.id && <Loader2 className="size-4 animate-spin self-center" aria-label="Saving" />}
@@ -115,6 +120,21 @@ export function UpdatesView() {
                     {r.stage !== "STOPPED" && (
                       <Button variant="outline" className="h-9 px-3" disabled={working !== null} onClick={() => void setStage(r, "STOPPED")}>
                         Stop offering
+                      </Button>
+                    )}
+                    {r.stage !== "STOPPED" && (
+                      <Button
+                        variant="outline"
+                        className="h-9 px-3"
+                        disabled={working !== null}
+                        aria-pressed={r.installNow}
+                        onClick={() =>
+                          void act(r.id, () =>
+                            apiFetch<ReleasesResponse>(`/api/releases/${r.id}`, { method: "PATCH", body: JSON.stringify({ installNow: !r.installNow }) }),
+                          )
+                        }
+                      >
+                        {r.installNow ? "Wait for a quiet time" : "Install at once"}
                       </Button>
                     )}
                     {r.stage !== "ALL" && (

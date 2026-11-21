@@ -1,0 +1,9 @@
+{
+  "version": "future",
+  "items": [],
+  "playlists": [],
+  "settings": { "orientation": "PORTRAIT", "sync": true, "somethingNew": { "x": 1 } },
+  "app": null,
+  "broadcast": null,
+  "alsoNew": [1, 2, 3]
+}

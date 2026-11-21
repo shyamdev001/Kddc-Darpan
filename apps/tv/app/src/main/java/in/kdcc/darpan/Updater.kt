@@ -27,12 +27,34 @@ class Updater(
     private val context: Context,
     private val http: OkHttpClient,
     private val prefs: Prefs,
+    /** True at a quiet moment for installing: outside display hours with no broadcast on (K5). */
+    private val quietNow: () -> Boolean = { true },
     /** Called when the status line changes, so the heartbeat can tell the dashboard. */
     private val onStatus: () -> Unit,
 ) {
     private val busy = Mutex()
     private val apk = File(context.filesDir, "update.apk")
     private val part = File(context.filesDir, "update.apk.part")
+
+    init {
+        // An install cut short between createSession and commit (power cut, crash) leaves a session
+        // holding a copy of the APK. Once per process, before this process starts one of its own;
+        // a committed one is Android's to finish (K5).
+        if (!cleaned) try {
+            cleaned = true
+            val installer = context.packageManager.packageInstaller
+            for (s in installer.mySessions) {
+                if (Build.VERSION.SDK_INT >= 29 && s.isCommitted) continue
+                try {
+                    installer.abandonSession(s.sessionId)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not drop install session ${s.sessionId}", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not list install sessions", e)
+        }
+    }
 
     /** Last word on an update for the dashboard, or null when there is nothing to report. */
     val status: String? get() = store(context).getString(KEY_STATUS, null)
@@ -62,6 +84,12 @@ class Updater(
             delay(waitMs)
             setStatus("Downloading version ${app.versionName}")
             withContext(Dispatchers.IO) { download(app) }
+            // Installing closes the app for a few seconds: wait for a quiet moment (K5).
+            val readySince = readySince(app.versionCode)
+            while (!InstallTime.mayInstall(app.installNow, urgent, quietNow(), (System.currentTimeMillis() - readySince).coerceAtLeast(0L))) {
+                setStatus("Version ${app.versionName} is downloaded; it installs outside display hours")
+                delay(CHECK_QUIET_MS)
+            }
             setStatus("Installing version ${app.versionName}")
             withContext(Dispatchers.IO) { install(app) }
             // Android now replaces the app and this process ends. A failure arrives in UpdateReceiver.
@@ -122,6 +150,17 @@ class Updater(
         }
     }
 
+    /** When this version finished downloading (wall clock), kept across restarts so the day cap holds. */
+    private fun readySince(versionCode: Int): Long {
+        val s = store(context)
+        val now = System.currentTimeMillis()
+        val at = s.getLong(KEY_READY_AT, 0)
+        // A clock that jumped back would make the wait look negative or endless: start again.
+        if (s.getInt(KEY_READY_CODE, 0) == versionCode && at in 1..now) return at
+        s.edit().putInt(KEY_READY_CODE, versionCode).putLong(KEY_READY_AT, now).apply()
+        return now
+    }
+
     private fun setStatus(text: String?) {
         if (text == status) return
         store(context).edit().putString(KEY_STATUS, text).apply()
@@ -148,6 +187,10 @@ class Updater(
         private const val KEY_FAILED_CODE = "failedCode"
         private const val KEY_FAILED_AT = "failedAt"
         private const val SPREAD_MS = 10 * 60_000L
+        private const val CHECK_QUIET_MS = 60_000L
+        @Volatile private var cleaned = false
+        private const val KEY_READY_CODE = "readyCode"
+        private const val KEY_READY_AT = "readyAt"
         private const val RETRY_AFTER_MS = 6 * 3_600_000L
 
         private fun store(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

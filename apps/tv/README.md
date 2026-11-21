@@ -100,6 +100,22 @@ Crashes:
   or when a new app version starts. While a test screen is in safe or rescue mode on a version, that
   version cannot be released to all.
 
+While locked, the app also (K6, K11): blocks safe boot, USB sticks and USB file transfer (allowed during
+maintenance), blocks adding users, keeps the power menu but not Home or Recents, lets firmware updates
+install only between 01:00 and 04:00, turns on automatic time and sets Android's sleep timeout to 10
+minutes (that timeout is what turns the screen off outside display hours). It never blocks factory reset.
+Installing from unknown sources is not blocked yet: first check on a real TV that our own updates still
+install with it set.
+
+App updates (OTA):
+- A downloaded update installs at a quiet moment: outside display hours with no broadcast on, or 01:00 to
+  04:00 on a TV with no display hours; after a day of waiting it installs anyway. **Install at once** on
+  App updates skips the wait for an urgent fix, and rescue mode never waits.
+- Build numbers are `offset + GitHub run number`, with the offset in `apps/tv/version.properties`. If the
+  run number starts again at 1 (workflow renamed, repo moved), raise the offset above the newest build on
+  the dashboard; the dashboard refuses an APK that is not newer.
+- Remote commands run one at a time on the TV, in the order they came.
+
 Notes:
 - App updates must be signed with the same key (the GitHub signing secrets); a differently signed APK
   cannot replace a device-owner app.

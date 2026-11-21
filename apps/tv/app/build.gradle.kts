@@ -10,8 +10,14 @@ plugins {
 // When empty, the TV asks for it on first start.
 val defaultServerUrl = (System.getenv("DARPAN_SERVER_URL") ?: "").trim().replace("\"", "")
 
-// GitHub Actions run number, so every build installs over the previous one.
-val buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+// GitHub Actions run number plus a fixed offset (apps/tv/version.properties), so every build
+// installs over the previous one even after the run number starts again at 1 (docs/AUDIT.md K4).
+val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+val versionOffset = java.util.Properties().run {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+    getProperty("offset").trim().toInt()
+}
+val buildNumber = versionOffset + runNumber
 
 // A stable signing key (from GitHub secrets) lets a new APK update the installed app.
 val keystorePath: String? = System.getenv("DARPAN_KEYSTORE_PATH")

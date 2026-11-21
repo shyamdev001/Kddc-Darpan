@@ -1,6 +1,6 @@
 import { RELEASE_STAGES, type ReleaseStage } from '@darpan/shared';
 import { Transform } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsIn, IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -23,6 +23,10 @@ export class UpdateReleaseDto {
   @IsString()
   @MaxLength(500)
   notes?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  installNow?: boolean;
 }
 
 export class SetTestScreensDto {

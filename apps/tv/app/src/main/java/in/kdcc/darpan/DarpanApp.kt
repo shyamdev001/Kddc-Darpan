@@ -25,6 +25,7 @@ class DarpanApp : Application() {
             scheduleRestart(this, wait)
             exitProcess(2)
         }
+        AppUpgrade.run(this, Prefs(this)) // before anything reads saved state (K10)
         watchPlayback()
         TrustedClock.init(this)
         WatchdogReceiver.schedule(this)

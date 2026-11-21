@@ -11,6 +11,14 @@ import { DevicesGateway } from './devices.gateway';
 
 const HISTORY = 8;
 
+/** Commands that undo each other: never both on their way at once (K8). */
+const OPPOSITE: Record<string, string[] | undefined> = {
+  kioskUnlock: ['kioskLock', 'kioskExit', 'kioskRemoveOwner'],
+  kioskLock: ['kioskUnlock', 'kioskExit', 'kioskRemoveOwner'],
+  kioskExit: ['kioskLock', 'kioskUnlock'],
+  kioskRemoveOwner: ['kioskLock', 'kioskUnlock'],
+};
+
 interface CommandResult {
   shotKey?: string;
   error?: string;
@@ -82,9 +90,27 @@ export class CommandsService implements OnModuleInit, OnModuleDestroy {
     await this.expireStale(screenId);
     const busy = await this.prisma.deviceCommand.count({ where: { screenId, type, status: { in: ['PENDING', 'SENT'] } } });
     if (busy) return this.list(screenId);
+    // Lock and unlock undo each other: one at a time, or the TV ends on whichever arrived last (K8).
+    const opposite = OPPOSITE[type];
+    if (opposite) {
+      const other = await this.prisma.deviceCommand.findFirst({
+        where: { screenId, type: { in: opposite }, status: { in: ['PENDING', 'SENT'] } },
+        include: { issuedBy: { select: { name: true } } },
+      });
+      if (other) {
+        throw new ConflictException(`${other.issuedBy?.name ?? 'Another admin'} just sent "${other.type}" to this TV. Wait for its answer, then try again.`);
+      }
+    }
 
     // Marked SENT before it goes out: a fast TV can reply before emit() returns, and that reply must not be overwritten.
-    const cmd = await this.prisma.deviceCommand.create({ data: { screenId, type, issuedById: user.id, status: 'SENT', sentAt: new Date() } });
+    let cmd;
+    try {
+      cmd = await this.prisma.deviceCommand.create({ data: { screenId, type, issuedById: user.id, status: 'SENT', sentAt: new Date() } });
+    } catch (err) {
+      // Two admins at the same moment: the database keeps one live command of each type (K8).
+      if ((err as { code?: string }).code === 'P2002') return this.list(screenId);
+      throw err;
+    }
     const sent = await this.gateway.sendCommand(screenId, { commandId: cmd.id, type });
     if (!sent) {
       await this.prisma.deviceCommand.updateMany({

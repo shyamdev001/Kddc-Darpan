@@ -18,6 +18,13 @@ class Prefs(private val context: Context) {
 
     val deviceToken: String? get() = p.getString(KEY_TOKEN, null)
 
+    /** The app build that last ran on this TV, for one-off upgrade steps (K10); 0 before K10. */
+    var lastVersionCode: Int
+        get() = p.getInt(KEY_LAST_VERSION, 0)
+        set(value) {
+            p.edit().putInt(KEY_LAST_VERSION, value).commit()
+        }
+
     /** Head office's kiosk PIN hash from the last manifest; kept so the PIN works offline (K1). */
     var kioskPin: KioskPinHash?
         get() = try {
@@ -92,6 +99,7 @@ class Prefs(private val context: Context) {
         const val KEY_PENDING_TOKEN = "pendingDeviceToken"
         const val KEY_FALLBACK_ID = "fallbackHardwareId"
         const val KEY_KIOSK_PIN = "kioskPin"
+        const val KEY_LAST_VERSION = "lastVersionCode"
         val pinJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
         const val BROKEN_ANDROID_ID = "9774d56d682e549c" // shared by many old devices
     }

@@ -125,6 +125,8 @@ export interface ManifestApp {
   url: string;
   sha256: string;
   size: number;
+  /** Install as soon as it is downloaded, not at a quiet moment (outside display hours, no broadcast). */
+  installNow?: boolean;
 }
 
 /** Socket.IO namespace `/devices`. Connect with `auth: { token: deviceToken }`. */

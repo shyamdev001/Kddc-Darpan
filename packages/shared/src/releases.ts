@@ -16,6 +16,8 @@ export interface AppReleaseEntry {
   sha256: string;
   notes: string | null;
   stage: ReleaseStage;
+  /** TVs install it at once rather than at a quiet moment. */
+  installNow: boolean;
   createdAt: string;
   uploadedBy: string | null;
   /** Screens that last reported running this version. */
@@ -45,6 +47,7 @@ export interface ReleasesResponse {
 export interface UpdateReleaseRequest {
   stage?: ReleaseStage;
   notes?: string | null;
+  installNow?: boolean;
 }
 
 /** PUT /api/releases/test-screens */

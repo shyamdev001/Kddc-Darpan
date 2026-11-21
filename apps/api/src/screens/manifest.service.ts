@@ -159,6 +159,7 @@ export class ManifestService implements OnModuleDestroy {
       url: `${publicBase()}/api/devices/app/${r.id}`,
       sha256: r.sha256,
       size: Number(r.sizeBytes),
+      installNow: r.installNow,
     };
   }
 }

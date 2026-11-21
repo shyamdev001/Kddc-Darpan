@@ -65,6 +65,7 @@ export class ReleasesService {
           sha256: r.sha256,
           notes: r.notes,
           stage: r.stage,
+          installNow: r.installNow,
           createdAt: r.createdAt.toISOString(),
           uploadedBy: r.uploadedBy?.name ?? null,
           screensOnIt: onVersion.get(r.versionCode) ?? 0,
@@ -98,6 +99,10 @@ export class ReleasesService {
       }
       const existing = await this.prisma.appRelease.findUnique({ where: { versionCode: info.versionCode } });
       if (existing) throw new ConflictException(`Version ${info.versionName} (build ${info.versionCode}) is already uploaded.`);
+      // K4: TVs only take a higher build number, and Android refuses a lower one anyway.
+      const newest = await this.prisma.appRelease.findFirst({ orderBy: { versionCode: 'desc' }, select: { versionCode: true, versionName: true } });
+      const older = olderBuildProblem(info.versionCode, newest);
+      if (older) throw new ConflictException(older);
 
       const sha256 = await sha256File(file.path);
       const key = `releases/darpan-${info.versionCode}.apk`;
@@ -131,8 +136,9 @@ export class ReleasesService {
   async update(id: string, dto: UpdateReleaseDto, user: AuthUser, ip?: string): Promise<ReleasesResponse> {
     const r = await this.prisma.appRelease.findUnique({ where: { id } });
     if (!r) throw new NotFoundException('Release not found');
-    const data: { stage?: typeof r.stage; notes?: string | null } = {};
+    const data: { stage?: typeof r.stage; notes?: string | null; installNow?: boolean } = {};
     if (dto.stage !== undefined) data.stage = dto.stage;
+    if (dto.installNow !== undefined) data.installNow = dto.installNow;
     if (dto.notes !== undefined) data.notes = dto.notes || null;
     if (data.stage === 'ALL' && r.stage !== 'ALL') {
       // K3: a build that crash-loops on a test TV must not reach every branch.
@@ -149,15 +155,16 @@ export class ReleasesService {
     }
     await this.prisma.appRelease.update({ where: { id }, data });
     const stageChanged = data.stage !== undefined && data.stage !== r.stage;
+    const installChanged = data.installNow !== undefined && data.installNow !== r.installNow;
     await this.audit.log({
       userId: user.id,
-      action: stageChanged ? `release.stage.${data.stage!.toLowerCase()}` : 'release.update',
+      action: stageChanged ? `release.stage.${data.stage!.toLowerCase()}` : installChanged ? `release.installNow.${data.installNow ? 'on' : 'off'}` : 'release.update',
       entityType: 'AppRelease',
       entityId: id,
       details: { versionCode: r.versionCode, from: r.stage, ...data },
       ipAddress: ip,
     });
-    if (stageChanged) this.events.contentChanged();
+    if (stageChanged || installChanged) this.events.contentChanged();
     return this.overview();
   }
 
@@ -204,4 +211,10 @@ export class ReleasesService {
     if (!path) throw new NotFoundException('Release not found');
     return path;
   }
+}
+
+/** Why an upload is refused as older than what is already there (K4), or null when it is newer. */
+export function olderBuildProblem(versionCode: number, newest: { versionCode: number; versionName: string } | null): string | null {
+  if (!newest || versionCode > newest.versionCode) return null;
+  return `This APK is build ${versionCode}, not newer than build ${newest.versionCode} (${newest.versionName}) already uploaded, so no TV would take it. Raise the offset in apps/tv/version.properties and build again.`;
 }

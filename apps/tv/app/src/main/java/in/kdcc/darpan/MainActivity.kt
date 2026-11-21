@@ -127,7 +127,15 @@ class MainActivity : Activity(), DeviceLink.Listener {
         store = ManifestStore(filesDir) { raw -> runCatching { api.parseManifest(raw) }.isSuccess }
         stagedStore = ManifestStore(filesDir, "manifest.staged.json") { raw -> runCatching { api.parseManifest(raw) }.isSuccess }
         plays = PlayLogStore(filesDir, bootId())
-        updater = Updater(this, api.http, prefs) { runOnUiThread { link?.sendHeartbeat() } }
+        updater = Updater(
+            this,
+            api.http,
+            prefs,
+            quietNow = {
+                val m = active
+                InstallTime.quiet(m?.settings?.hours, TrustedClock.now(), TrustedClock.certain, m != null && broadcasts.isLive(m.broadcast))
+            },
+        ) { runOnUiThread { link?.sendHeartbeat() } }
         playback = Playback(
             this,
             findViewById<ImageView>(R.id.imageA),
@@ -687,29 +695,37 @@ class MainActivity : Activity(), DeviceLink.Listener {
         if (version != manifestVersion) scope.launch { sync() }
     }
 
+    /** Remote commands run one at a time, in the order they came (K8). */
+    private val commandQueue = Mutex()
+
     override fun onCommand(commandId: String, type: String) {
+        // A restart waits for a running clearCache or screenshot; lock and unlock never interleave.
+        scope.launch { commandQueue.withLock { runCommand(commandId, type) } }
+    }
+
+    private suspend fun runCommand(commandId: String, type: String) {
         val l = link
         when (type) {
-            "reload" -> scope.launch {
+            "reload" -> {
                 val ok = sync()
                 l?.sendAck(commandId, ok, if (ok) null else "Could not fetch the playlist from the server")
             }
-            "restart" -> scope.launch {
+            "restart" -> {
                 l?.sendAck(commandId, true) // reply first: the restart cuts the connection
                 offWatch.expect(60_000)
                 delay(800)
                 DarpanApp.restart(this@MainActivity)
             }
-            "clearCache" -> scope.launch {
+            "clearCache" -> {
                 withContext(Dispatchers.IO) { cache.clearAll() }
                 val ok = sync()
                 l?.sendAck(commandId, ok, if (ok) null else "Files cleared, but the new download could not start")
             }
-            "screenshot" -> scope.launch {
+            "screenshot" -> {
                 val shot = Screenshot.capture(this@MainActivity, playback.videoOnScreen)
                 if (shot == null) {
                     l?.sendAck(commandId, false, "The TV could not read its screen")
-                    return@launch
+                    return
                 }
                 shot.videoBlack?.let { black ->
                     val before = Capabilities.report(this@MainActivity).videoInScreenshot
@@ -728,12 +744,12 @@ class MainActivity : Activity(), DeviceLink.Listener {
                     l?.sendAck(commandId, false, "Upload failed: ${e.message ?: "network error"}")
                 }
             }
-            "screenOffTest" -> scope.launch {
+            "screenOffTest" -> {
                 offWatch.expect(30_000)
                 val result = ScreenOff.test(this@MainActivity)
                 if (result == null) {
                     l?.sendAck(commandId, false, "Kiosk mode is not set up: the app cannot switch the screen off")
-                    return@launch
+                    return
                 }
                 Capabilities.learn(this@MainActivity, Capabilities.KEY_SCREEN_OFF, result.works)
                 l?.sendAck(commandId, result.works, result.problem)

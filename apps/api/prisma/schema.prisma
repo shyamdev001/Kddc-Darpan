@@ -445,6 +445,8 @@ model AppRelease {
   sizeBytes    BigInt
   notes        String?
   stage        ReleaseStage @default(TEST)
+  /// TVs install at once instead of waiting for a quiet moment (K5): for urgent fixes.
+  installNow   Boolean      @default(false)
   uploadedById String?      @db.Uuid
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt

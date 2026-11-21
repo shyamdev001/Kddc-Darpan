@@ -134,4 +134,6 @@ data class ManifestApp(
     val url: String,
     val sha256: String,
     val size: Long,
+    /** Head office wants it installed at once, not at a quiet moment (K5). */
+    val installNow: Boolean = false,
 )

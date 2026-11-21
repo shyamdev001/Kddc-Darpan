@@ -3,11 +3,12 @@ package `in`.kdcc.darpan
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.admin.DevicePolicyManager
+import android.app.admin.SystemUpdatePolicy
+import android.os.Build
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.UserManager
 import android.provider.Settings
 import android.util.Log
 
@@ -26,6 +27,9 @@ object Kiosk {
     private const val KEY_UNTIL = "maintenanceUntil"
     private const val KEY_EXITED = "exited"
     const val MAINTENANCE_MS = 15 * 60_000L
+
+    /** The policy set last applied in this process, so the 30-second enforce does not repeat it. */
+    @Volatile private var applied: Set<String>? = null
 
     fun admin(context: Context) = ComponentName(context, AdminReceiver::class.java)
 
@@ -99,14 +103,14 @@ object Kiosk {
             dpm.addPersistentPreferredActivity(admin, home, ComponentName(activity, MainActivity::class.java))
             dpm.setKeyguardDisabled(admin, true)
             dpm.setStatusBarDisabled(admin, !maintenance)
-            // Android debugging (adb) lets anyone on the branch network control the TV and read its
-            // key. Blocked while locked; a technician can use it during maintenance, and in rescue
-            // mode (K2) so a crash-looping TV can still be fixed without a factory reset.
+            // Restrictions per state, with the reason for each, in KioskPolicy (K6). Debugging stays
+            // open in rescue mode (K2) so a crash-looping TV can still be fixed without a factory reset.
             val rescue = DarpanApp.crashes(activity)?.inRescue() == true
-            if (DebugPolicy.block(owner = true, inMaintenance = maintenance, debugBuild = BuildConfig.DEBUG, rescue = rescue)) {
-                dpm.addUserRestriction(admin, UserManager.DISALLOW_DEBUGGING_FEATURES)
-            } else {
-                dpm.clearUserRestriction(admin, UserManager.DISALLOW_DEBUGGING_FEATURES)
+            val want = KioskPolicy.restrictions(exited = false, maintenance = maintenance, rescue = rescue, debugBuild = BuildConfig.DEBUG)
+            if (want != applied) {
+                applyRestrictions(dpm, admin, want)
+                deviceSettings(dpm, admin)
+                applied = want
             }
             if (maintenance) {
                 if (pinned(activity)) activity.stopLockTask()
@@ -132,7 +136,53 @@ object Kiosk {
         step("clear the home app") { dpm.clearPackagePersistentPreferredActivities(admin, activity.packageName) }
         step("enable the status bar") { dpm.setStatusBarDisabled(admin, false) }
         step("enable the keyguard") { dpm.setKeyguardDisabled(admin, false) }
-        step("allow debugging") { dpm.clearUserRestriction(admin, UserManager.DISALLOW_DEBUGGING_FEATURES) }
+        step("clear restrictions") { applyRestrictions(dpm, admin, emptySet()) }
+        step("clear the firmware update window") { dpm.setSystemUpdatePolicy(admin, null) }
+        applied = null
+    }
+
+    /** Sets [want] and clears every other restriction Darpan manages. Each on its own (OEM builds differ). */
+    private fun applyRestrictions(dpm: DevicePolicyManager, admin: ComponentName, want: Set<String>) {
+        for (key in KioskPolicy.MANAGED) {
+            try {
+                if (key in want) dpm.addUserRestriction(admin, key) else dpm.clearUserRestriction(admin, key)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not set $key", e)
+            }
+        }
+    }
+
+    /**
+     * Settings a device owner may make once it holds the TV (K6, K11). Each on its own, guarded by
+     * Android version: TV firmware is often missing one or another.
+     */
+    private fun deviceSettings(dpm: DevicePolicyManager, admin: ComponentName) {
+        fun step(name: String, block: () -> Unit) = try {
+            block()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not $name", e)
+        }
+        // The power menu stays (branch staff switch the TV off), Home and Recents do not; safe boot
+        // from that menu is blocked by a restriction above.
+        if (Build.VERSION.SDK_INT >= 28) {
+            step("set lock task features") { dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS) }
+        }
+        // Firmware updates at night only, not in the middle of a banking day.
+        step("set the firmware update window") {
+            dpm.setSystemUpdatePolicy(admin, SystemUpdatePolicy.createWindowedInstallPolicy(KioskPolicy.UPDATE_WINDOW_START_MIN, KioskPolicy.UPDATE_WINDOW_END_MIN))
+        }
+        // The right time from the network: schedules and proof of play depend on it.
+        if (Build.VERSION.SDK_INT >= 30) {
+            step("turn on automatic time") { dpm.setAutoTimeEnabled(admin, true) }
+        } else {
+            @Suppress("DEPRECATION")
+            step("turn on automatic time") { dpm.setGlobalSetting(admin, Settings.Global.AUTO_TIME, "1") }
+        }
+        if (Build.VERSION.SDK_INT >= 28) {
+            step("set the sleep timeout") {
+                dpm.setSystemSetting(admin, Settings.System.SCREEN_OFF_TIMEOUT, KioskPolicy.SCREEN_OFF_TIMEOUT_MS.toString())
+            }
+        }
     }
 
     /** Unlocks for [MAINTENANCE_MS]. False if this TV is not in kiosk mode. */

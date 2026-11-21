@@ -6,6 +6,7 @@ import { isYoutubeHost, youtubeId } from '@darpan/shared';
 import { base32Decode, base32Encode, codeAt, decryptSecret, encryptSecret, hashRecoveryCode, verifyCode } from '../src/auth/totp';
 import { hashDeviceToken, newDeviceToken, newPairingCode } from '../src/screens/device-auth';
 import { appliesTo, type ScreenPlace } from '../src/screens/playlist-resolver.service';
+import { olderBuildProblem } from '../src/releases/releases.service';
 import './env'; // TOTP_ENCRYPTION_KEY for the secret round trip
 
 describe('which screens a setting reaches', () => {
@@ -141,5 +142,16 @@ describe('broadcast links', () => {
     assert.equal(isYoutubeHost('https://youtu.be/' + id), true);
     assert.equal(isYoutubeHost('https://notyoutube.com/x'), false);
     assert.equal(isYoutubeHost('https://cdn.example.com/live/index.m3u8'), false);
+  });
+});
+
+describe('app builds only go up (K4)', () => {
+  it('refuses a build that is not newer than the newest uploaded, and says how to fix it', () => {
+    assert.equal(olderBuildProblem(1001, null), null);
+    assert.equal(olderBuildProblem(1043, { versionCode: 1042, versionName: '0.1.1042' }), null);
+    assert.match(olderBuildProblem(1042, { versionCode: 1042, versionName: '0.1.1042' })!, /not newer/);
+    const msg = olderBuildProblem(1003, { versionCode: 142, versionName: '0.1.142' });
+    assert.equal(msg, null, 'the offset lifts new builds above the old run numbers');
+    assert.match(olderBuildProblem(5, { versionCode: 1042, versionName: '0.1.1042' })!, /version\.properties/);
   });
 });

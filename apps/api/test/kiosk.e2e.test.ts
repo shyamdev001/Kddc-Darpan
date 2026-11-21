@@ -196,3 +196,38 @@ describe('no release to all while a test TV crash-loops on it (K3)', () => {
     assert.equal(ok.status, 200, JSON.stringify(ok.body));
   });
 });
+
+describe('one command at a time (K8)', () => {
+  it('two admins at once create one command; lock while unlock is on its way is refused with who sent it', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Busy TV');
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    await device.timeout(3_000).emitWithAck('heartbeat', { ...base, kiosk: 'locked' });
+    const send = (type: string) => call(t.base, 'POST', `/screens/${tv.deviceId}/commands`, { cookie: admin, body: { type } });
+
+    const both = await Promise.all([send('reload'), send('reload'), send('reload')]);
+    assert.ok(both.every((r) => r.status === 201), JSON.stringify(both.map((r) => r.status)));
+    assert.equal(await t.prisma.deviceCommand.count({ where: { screenId: tv.deviceId, type: 'reload' } }), 1);
+
+    assert.equal((await send('kioskUnlock')).status, 201);
+    const lock = await send('kioskLock');
+    assert.equal(lock.status, 409);
+    assert.match(lock.body.message, /kioskUnlock/);
+  });
+});
+
+describe('when TVs install an update (K5)', () => {
+  it('"install at once" reaches the manifest and the activity log', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Update TV');
+    await t.prisma.screen.update({ where: { id: tv.deviceId }, data: { testUpdates: true } });
+    const r = await t.prisma.appRelease.create({ data: { versionCode: 1500, versionName: '0.1.1500', storageKey: 'releases/1500.apk', sha256: 'b'.repeat(64), sizeBytes: 1000n } });
+    const offer = async () => (await call(t.base, 'GET', '/devices/manifest', { token: tv.deviceToken })).body.app;
+    assert.equal((await offer()).installNow, false);
+
+    const res = await call(t.base, 'PATCH', `/releases/${r.id}`, { cookie: admin, body: { installNow: true } });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.releases.find((x: { id: string }) => x.id === r.id).installNow, true);
+    assert.equal((await offer()).installNow, true);
+    assert.ok(await t.prisma.auditLog.findFirst({ where: { action: 'release.installNow.on', entityId: r.id } }));
+  });
+});
