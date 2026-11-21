@@ -38,7 +38,7 @@ class Updater(
     val status: String? get() = store(context).getString(KEY_STATUS, null)
 
     /** Call after each manifest; does nothing if no newer build is offered or one is already on its way. */
-    suspend fun consider(app: ManifestApp?) {
+    suspend fun consider(app: ManifestApp?, urgent: Boolean = false) {
         if (app == null || app.versionCode <= BuildConfig.VERSION_CODE) {
             if (status != null) setStatus(null)
             withContext(Dispatchers.IO) {
@@ -56,7 +56,8 @@ class Updater(
         if (!busy.tryLock()) return
         try {
             // A hundred TVs told at the same moment should not all download at once.
-            val waitMs = Random.nextLong(0, SPREAD_MS)
+            // In rescue mode (K2) the fix is the point, and the app may not live ten minutes.
+            val waitMs = if (urgent) 0L else Random.nextLong(0, SPREAD_MS)
             setStatus("Version ${app.versionName} will download in ${waitMs / 60_000 + 1} min")
             delay(waitMs)
             setStatus("Downloading version ${app.versionName}")

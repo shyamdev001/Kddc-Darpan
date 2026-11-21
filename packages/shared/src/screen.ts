@@ -153,9 +153,10 @@ export interface ScreenListResponse {
 
 /**
  * off: the app is not the TV's device owner (kiosk mode not set up). locked: pinned, nothing else
- * can open. maintenance: unlocked for a while so the TV's settings can be used.
+ * can open. maintenance: unlocked for a while so the TV's settings can be used. exited: taken out
+ * of kiosk mode from the dashboard until it is locked again.
  */
-export const KIOSK_STATES = ['off', 'locked', 'maintenance'] as const;
+export const KIOSK_STATES = ['off', 'locked', 'maintenance', 'exited'] as const;
 export type KioskState = (typeof KIOSK_STATES)[number];
 /** How long "Unlock for maintenance" lasts; the TV locks itself again after this. */
 export const KIOSK_MAINTENANCE_MIN = 15;
@@ -180,6 +181,10 @@ export interface ScreenDetail extends ScreenSummary {
   crash: { at: string; type: string; message: string | null; frames: string[]; total: number; recent: number } | null;
   /** Many crashes lately: playing posters only (no video, no live links) for up to an hour. */
   safeMode: boolean;
+  /** Still crashing in safe mode: only the default slide for now; it keeps syncing and takes updates. */
+  rescueMode: boolean;
+  /** The TV holds the kiosk PIN; null for app versions that do not report it. */
+  kioskPinSet: boolean | null;
   /** Videos this TV skips because it cannot play them, with the ad's name and the reason in plain words. */
   unplayable: { mediaId: string; name: string; reason: string }[];
   /** The TV itself took the screen away during display hours, not Darpan; null when not in the last week. */
@@ -257,6 +262,42 @@ export type RemoteCommandType = (typeof REMOTE_COMMANDS)[number];
 export interface SendCommandRequest {
   type: RemoteCommandType;
 }
+
+/**
+ * Taking a TV out of kiosk mode (K7). exit: unlocked until "Lock now"; removeOwner: also no longer
+ * device owner, so it can be uninstalled, and only adb at the TV makes it a kiosk again.
+ * Super admin only, with a fresh two-step code, the screen's name typed and a reason.
+ */
+export const KIOSK_RELEASE_ACTIONS = ['exit', 'removeOwner'] as const;
+export type KioskReleaseAction = (typeof KIOSK_RELEASE_ACTIONS)[number];
+
+/** POST /api/screens/:id/kiosk-release */
+export interface KioskReleaseRequest {
+  action: KioskReleaseAction;
+  /** A code from the authenticator app (or a recovery code), checked now, not at sign-in. */
+  code: string;
+  /** The screen's name as shown, to make sure it is the right TV. */
+  confirmName: string;
+  /** Why; kept in the activity log. */
+  reason: string;
+}
+
+/** GET /api/kiosk/pin */
+export interface KioskPinStatus {
+  set: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+/** PUT /api/kiosk/pin. pin null removes it (TVs go back to the offline-only Menu unlock). */
+export interface SetKioskPinRequest {
+  pin: string | null;
+  /** A fresh two-step code. */
+  code: string;
+}
+
+/** 6 to 12 digits: TV remotes and the on-screen keyboard both handle digits. */
+export const KIOSK_PIN_PATTERN = /^\d{6,12}$/;
 
 /**
  * A command and what became of it. SENT with no reply after COMMAND_REPLY_SEC is shown as

@@ -84,6 +84,8 @@ data class ManifestSettings(
     val hours: DisplayHours? = null,
     /** The branch keeps its screens in step: play the shared timeline (SyncPlan), not our own loop. */
     val sync: Boolean = false,
+    /** The local unlock PIN as a salted hash (K1); null = none set, the offline Menu unlock applies. */
+    val kioskPin: KioskPinHash? = null,
 )
 
 @Serializable

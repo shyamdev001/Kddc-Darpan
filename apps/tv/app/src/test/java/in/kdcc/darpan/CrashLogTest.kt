@@ -66,6 +66,85 @@ class CrashLogTest {
     }
 
     @Test
+    fun eachCrash_waitsLonger_upToFiveMinutes() {
+        val dir = tmp.newFolder()
+        val waits = (0 until 7).map { i -> CrashLog(dir).record(IllegalStateException("boom"), t0 + i * 1_000L, elapsedNow = 50_000L + i) }
+        assertEquals(listOf(3_000L, 10_000L, 30_000L, 120_000L, 300_000L, 300_000L, 300_000L), waits)
+        assertEquals(3_000L, CrashLog.restartDelayMs(listOf(t0 - min(31)), t0)) // old crashes do not count
+    }
+
+    @Test
+    fun aStartTooSoonAfterACrash_waits() {
+        val dir = tmp.newFolder()
+        CrashLog(dir).record(IllegalStateException("boom"), t0, elapsedNow = 100_000L)
+        val log = CrashLog(dir)
+        assertEquals(2_000L, log.coolDownMs(101_000L)) // Android reopened its home app after 1 s
+        assertEquals(0L, log.coolDownMs(103_000L))
+        assertEquals(0L, log.coolDownMs(10L)) // after a reboot the uptime clock starts again: run now
+    }
+
+    @Test
+    fun aCrashInSafeMode_startsRescueMode_forThisVersionOnly() {
+        val dir = tmp.newFolder()
+        for (i in 0 until 5) CrashLog(dir, versionCode = 40).record(IllegalStateException("boom"), t0 + min(i))
+        assertTrue(CrashLog(dir, 40).inSafeMode(t0 + min(5)))
+        assertFalse(CrashLog(dir, 40).inRescue(t0 + min(5)))
+
+        CrashLog(dir, 40).record(IllegalStateException("again"), t0 + min(6))
+        assertTrue(CrashLog(dir, 40).inRescue(t0 + min(7)))
+        assertTrue(CrashLog(dir, 40).inSafeMode(t0 + min(7)))
+        assertFalse(CrashLog(dir, 41).inRescue(t0 + min(7))) // the fixed version starts normally
+        // An hour after the last crash it plays normally again.
+        assertTrue(CrashLog(dir, 40).inRescue(t0 + min(6) + min(59)))
+        assertFalse(CrashLog(dir, 40).inRescue(t0 + min(6) + min(61)))
+    }
+
+    @Test
+    fun tenCrashesInHalfAnHour_startRescueMode_evenWithoutSafeMode() {
+        assertTrue(CrashLog.shouldEnterRescue(List(10) { t0 + min(3 * it) }, t0 + min(28), wasSafe = false))
+        assertFalse(CrashLog.shouldEnterRescue(List(9) { t0 + min(3 * it) }, t0 + min(28), wasSafe = false))
+    }
+
+    @Test
+    fun rescueMode_endsOnARemoteRestart_andACrashThereKeepsItOn() {
+        val dir = tmp.newFolder()
+        for (i in 0 until 6) CrashLog(dir, 7).record(IllegalStateException("boom"), t0 + min(i))
+        val log = CrashLog(dir, 7)
+        assertTrue(log.inRescue(t0 + min(30)))
+        log.record(IllegalStateException("in rescue"), t0 + min(50))
+        assertTrue(CrashLog(dir, 7).inRescue(t0 + min(50) + min(59))) // a crash in rescue extends it
+        CrashLog(dir, 7).clearSafeMode()
+        assertFalse(CrashLog(dir, 7).inRescue(t0 + min(51)))
+        assertFalse(CrashLog(dir, 7).inSafeMode(t0 + min(51)))
+    }
+
+    @Test
+    fun aClockSetBack_cannotStretchRescueMode() {
+        val dir = tmp.newFolder()
+        for (i in 0 until 6) CrashLog(dir, 7).record(IllegalStateException("boom"), t0 + min(i))
+        assertFalse(CrashLog(dir, 7).inRescue(t0 - 86_400_000L))
+    }
+
+    @Test
+    fun rescueMode_showsOnlyTheDefaultSlide() {
+        fun item(id: String, type: String) = ManifestItem(mediaId = id, url = "http://tv.test/$id", sha256 = id, size = 1, type = type, durationSec = 10)
+        val m = Manifest(
+            version = "1",
+            items = listOf(item("slide", "IMAGE"), item("poster", "IMAGE"), item("video", "VIDEO")),
+            playlists = listOf(ManifestPlaylist(id = "p", items = listOf(PlaylistEntry("poster", 10)))),
+            broadcast = ManifestBroadcast(id = "b", kind = "MESSAGE", message = "Closed"),
+            fallbackMediaId = "slide",
+            settings = ManifestSettings(kioskPin = KioskPinHash("00", "00", 1)),
+        )
+        val r = CrashLog.rescue(m)
+        assertEquals(listOf("slide"), r.items.map { it.mediaId })
+        assertTrue(r.playlists.isEmpty())
+        assertNull(r.broadcast)
+        assertEquals(m.settings, r.settings) // display hours and the PIN still apply
+        assertTrue(CrashLog.rescue(m.copy(fallbackMediaId = null)).items.isEmpty())
+    }
+
+    @Test
     fun aDamagedFile_isIgnored() {
         val dir = tmp.newFolder()
         java.io.File(dir, "crashes.json").writeText("{not json")

@@ -61,6 +61,8 @@ const NEW_TV_STATE = {
   unplayable: Prisma.DbNull,
   tvOff: Prisma.DbNull,
   safeMode: false,
+  rescueMode: false,
+  kioskPinSet: null,
   capabilities: Prisma.DbNull,
   playSync: Prisma.DbNull,
   broadcastId: null,
@@ -353,6 +355,8 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
       files: screenFiles(s),
       crash: screenCrash(s.lastCrash),
       safeMode: s.safeMode,
+      rescueMode: s.rescueMode,
+      kioskPinSet: s.kioskPinSet,
       // Ads deleted since are left out: nothing to act on.
       tvOff: recentTvOff(s.tvOff, Date.now()),
       unplayable: reported.flatMap((u) => (mediaName.has(u.mediaId) ? [{ mediaId: u.mediaId, name: mediaName.get(u.mediaId)!, reason: u.reason }] : [])),

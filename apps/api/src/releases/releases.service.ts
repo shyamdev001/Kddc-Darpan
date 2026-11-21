@@ -134,6 +134,19 @@ export class ReleasesService {
     const data: { stage?: typeof r.stage; notes?: string | null } = {};
     if (dto.stage !== undefined) data.stage = dto.stage;
     if (dto.notes !== undefined) data.notes = dto.notes || null;
+    if (data.stage === 'ALL' && r.stage !== 'ALL') {
+      // K3: a build that crash-loops on a test TV must not reach every branch.
+      const sick = await this.prisma.screen.findMany({
+        where: { testUpdates: true, appVersionCode: r.versionCode, OR: [{ safeMode: true }, { rescueMode: true }] },
+        select: { name: true },
+        take: 5,
+      });
+      if (sick.length) {
+        throw new ConflictException(
+          `Not released to all: this version keeps crashing on test screen${sick.length > 1 ? 's' : ''} ${sick.map((x) => x.name ?? 'unnamed').join(', ')} (safe or rescue mode). Fix it, or take the screen out of the test group.`,
+        );
+      }
+    }
     await this.prisma.appRelease.update({ where: { id }, data });
     const stageChanged = data.stage !== undefined && data.stage !== r.stage;
     await this.audit.log({

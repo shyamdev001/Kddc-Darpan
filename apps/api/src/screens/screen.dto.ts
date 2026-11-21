@@ -1,7 +1,7 @@
 import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
-import { REMOTE_COMMANDS, type RemoteCommandType } from '@darpan/shared';
+import { KIOSK_PIN_PATTERN, KIOSK_RELEASE_ACTIONS, REMOTE_COMMANDS, type KioskReleaseAction, type RemoteCommandType } from '@darpan/shared';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().normalize('NFC') : value);
 const ORIENTATIONS = ['LANDSCAPE', 'PORTRAIT'] as const;
@@ -87,4 +87,37 @@ export class SetPlaylistDto {
 export class SendCommandDto {
   @IsIn(REMOTE_COMMANDS, { message: 'Unknown command' })
   type!: RemoteCommandType;
+}
+
+export class KioskReleaseDto {
+  @IsIn(KIOSK_RELEASE_ACTIONS, { message: 'Choose exit or removeOwner' })
+  action!: KioskReleaseAction;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(40)
+  code!: string;
+
+  @Transform(trim)
+  @IsString()
+  @MaxLength(120)
+  confirmName!: string;
+
+  @Transform(trim)
+  @IsString()
+  @MaxLength(300)
+  reason!: string;
+}
+
+export class SetKioskPinDto {
+  /** null (or left out) removes the PIN. */
+  @IsOptional()
+  @IsString()
+  @Matches(KIOSK_PIN_PATTERN, { message: 'The PIN must be 6 to 12 digits.' })
+  pin?: string | null;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(40)
+  code!: string;
 }

@@ -4,7 +4,8 @@ import type { Request, Response } from 'express';
 import type { AuthUser } from '../auth/auth.types';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { CommandsService } from './commands.service';
-import { ClaimScreenDto, ReplaceScreenDto, SendCommandDto, SetPlaylistDto, UpdateScreenDto } from './screen.dto';
+import { KioskService } from './kiosk.service';
+import { ClaimScreenDto, KioskReleaseDto, ReplaceScreenDto, SendCommandDto, SetKioskPinDto, SetPlaylistDto, UpdateScreenDto } from './screen.dto';
 import { ScreensService } from './screens.service';
 
 @Controller()
@@ -12,6 +13,7 @@ export class ScreensController {
   constructor(
     private readonly screens: ScreensService,
     private readonly commands: CommandsService,
+    private readonly kiosk: KioskService,
   ) {}
 
   @Get('screens')
@@ -84,6 +86,29 @@ export class ScreensController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   sendCommand(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SendCommandDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
     return this.commands.send(id, dto.type, user, req.ip);
+  }
+
+  /** Out of kiosk mode, or out of device owner too (K7). Super admins only, with a fresh two-step code. */
+  @Post('screens/:id/kiosk-release')
+  @Roles('SUPER_ADMIN')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  kioskRelease(@Param('id', ParseUUIDPipe) id: string, @Body() dto: KioskReleaseDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    return this.kiosk.release(id, dto.action, dto.code, dto.confirmName, dto.reason, user, req.ip);
+  }
+
+  /** Whether a kiosk PIN is set (never the PIN). */
+  @Get('kiosk/pin')
+  @Roles('HO_ADMIN')
+  kioskPin() {
+    return this.kiosk.pinStatus();
+  }
+
+  /** Sets or removes the PIN for the local unlock on every TV (K1). Super admins only, with a fresh two-step code. */
+  @Put('kiosk/pin')
+  @Roles('SUPER_ADMIN')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  setKioskPin(@Body() dto: SetKioskPinDto, @CurrentUser() user: AuthUser, @Req() req: Request) {
+    return this.kiosk.setPin(dto.pin ?? null, dto.code, user, req.ip);
   }
 
   @Get('screens/:id/screenshots/:commandId')

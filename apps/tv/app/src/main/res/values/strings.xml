@@ -12,4 +12,13 @@
     <string name="setup_connect">Connect</string>
     <string name="kiosk_locked">This TV is locked. To change its settings, unlock it from the dashboard: Screens, this screen, Remote control.</string>
     <string name="kiosk_offline_unlock">Cannot reach the server, so settings are unlocked for 15 minutes.</string>
+    <string name="kiosk_locked_pin">This TV is locked. To change its settings, unlock it from the dashboard, or press Menu five times and enter the kiosk PIN.</string>
+    <string name="kiosk_pin_title">Kiosk PIN</string>
+    <string name="kiosk_pin_hint">Enter the kiosk PIN to open the TV\'s settings for 15 minutes.</string>
+    <string name="kiosk_pin_unlock">Unlock</string>
+    <string name="kiosk_pin_cancel">Cancel</string>
+    <string name="kiosk_pin_ok">Settings unlocked for 15 minutes.</string>
+    <string name="kiosk_pin_wrong">Wrong PIN.</string>
+    <string name="kiosk_pin_blocked">Too many wrong PINs. Try again in %1$d minutes.</string>
+    <string name="restart_wait">Darpan stopped unexpectedly. Starting again in %1$d seconds.</string>
 </resources>

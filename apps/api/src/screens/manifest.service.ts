@@ -135,7 +135,10 @@ export class ManifestService implements OnModuleDestroy {
     const items = fallbackItem ? [fallbackItem, ...[...media.values()].filter((i) => i.mediaId !== fallbackItem.mediaId)] : [...media.values()];
     const fallbackMediaId = fallbackItem?.mediaId ?? null;
     const sync = screen.branchId ? ((await this.prisma.branch.findUnique({ where: { id: screen.branchId }, select: { syncPlayback: true } }))?.syncPlayback ?? false) : false;
-    const settings: ManifestSettings = { orientation: screen.orientation, hours: hours?.hours ?? null, sync };
+    const pin = await this.prisma.kioskSettings.findUnique({ where: { id: 1 }, select: { pinSalt: true, pinHash: true, pinIterations: true } });
+    // The local unlock PIN (K1), as a salted hash the TV checks offline; never the PIN itself.
+    const kioskPin = pin?.pinSalt && pin.pinHash && pin.pinIterations ? { salt: pin.pinSalt, hash: pin.pinHash, iterations: pin.pinIterations } : null;
+    const settings: ManifestSettings = { orientation: screen.orientation, hours: hours?.hours ?? null, sync, kioskPin };
     const app = await this.appOffer(screen.testUpdates);
     const broadcast = toManifestBroadcast(broadcasts.get(screen.id) ?? null);
     // The version only changes when what the TV must do changes, so it can skip identical manifests.

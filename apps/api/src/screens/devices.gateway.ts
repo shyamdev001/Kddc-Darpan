@@ -10,9 +10,10 @@ import {
   type OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { SkipThrottle } from '@nestjs/throttler';
-import { DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, KIOSK_STATES, ONLINE_WINDOW_MS, type CommandAckPayload, type DeviceCommandPayload, type HeartbeatPayload } from '@darpan/shared';
+import { DEVICE_NAMESPACE, DEVICE_REMOVED_EVENT, KIOSK_STATES, ONLINE_WINDOW_MS, type CommandAckPayload, type DeviceCommandPayload, type HeartbeatPayload, type KioskEventPayload, KIOSK_EVENT_KINDS } from '@darpan/shared';
 import { bufferTime, filter, Subject, type Subscription } from 'rxjs';
 import type { Namespace, Socket } from 'socket.io';
+import { AuditService } from '../audit/audit.service';
 import { ContentEvents } from '../events/content-events';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -61,6 +62,7 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     private readonly prisma: PrismaService,
     private readonly manifests: ManifestService,
     private readonly events: ContentEvents,
+    private readonly audit: AuditService,
   ) {}
 
   async onModuleInit() {
@@ -193,6 +195,8 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
           : {}),
         ...(typeof body.adbEnabled === 'boolean' ? { adbEnabled: body.adbEnabled } : {}),
         ...(typeof body.safeMode === 'boolean' ? { safeMode: body.safeMode } : {}),
+        ...(typeof body.rescueMode === 'boolean' ? { rescueMode: body.rescueMode } : {}),
+        ...(typeof body.kioskPinSet === 'boolean' ? { kioskPinSet: body.kioskPinSet } : {}),
         ...(caps ? { capabilities: caps as unknown as Prisma.InputJsonObject } : {}),
         // Older app versions send no sync report: leave what we had.
         ...(cleanPlaySync(body.sync) ? { playSync: cleanPlaySync(body.sync) as unknown as Prisma.InputJsonObject } : {}),
@@ -212,6 +216,7 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     });
     // A heartbeat proves the connection is up, even if a reconnect race marked the screen offline.
     await this.prisma.screen.updateMany({ where: { id: screenId, status: 'OFFLINE' }, data: { status: 'ONLINE' } });
+    if (Array.isArray(body.kioskEvents) && body.kioskEvents.length) await this.logKioskEvents(screenId, body.kioskEvents);
     this.events.screenUpdated(screenId);
     const data = socket.data as Partial<DeviceData>;
     if (!data.manifestChecked) {
@@ -219,6 +224,41 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       void this.catchUp(socket, screenId, typeof body.manifestVersion === 'string' ? body.manifestVersion : null);
     }
     return { ok: true };
+  }
+
+  /**
+   * Local unlocks at the TV (Menu five times and the PIN, or Menu while offline with no PIN set) and
+   * wrong PINs go into the activity log, once each: the TV repeats its last day's events in every
+   * heartbeat, so each is matched by the id the TV gave it.
+   */
+  private async logKioskEvents(screenId: string, raw: unknown[]): Promise<void> {
+    const now = Date.now();
+    const events = raw
+      .slice(0, 20)
+      .map((e) => (typeof e === 'object' && e !== null ? (e as Partial<KioskEventPayload>) : {}))
+      .filter(
+        (e): e is KioskEventPayload =>
+          typeof e.id === 'string' && /^[0-9a-f-]{8,64}$/i.test(e.id) &&
+          typeof e.kind === 'string' && (KIOSK_EVENT_KINDS as readonly string[]).includes(e.kind) &&
+          typeof e.agoSec === 'number' && Number.isFinite(e.agoSec) && e.agoSec >= 0 && e.agoSec <= 2 * 86_400,
+      );
+    if (!events.length) return;
+    const seen = await this.prisma.auditLog.findMany({
+      where: { entityType: 'Screen', entityId: screenId, action: { startsWith: 'screen.kiosk.' }, createdAt: { gte: new Date(now - 3 * 86_400_000) } },
+      select: { details: true },
+    });
+    const known = new Set(seen.map((r) => (r.details as { eventId?: string } | null)?.eventId).filter(Boolean));
+    for (const e of events) {
+      if (known.has(e.id)) continue;
+      known.add(e.id);
+      await this.audit.log({
+        userId: null,
+        action: `screen.kiosk.${e.kind}`,
+        entityType: 'Screen',
+        entityId: screenId,
+        details: { eventId: e.id, at: new Date(now - Math.round(e.agoSec) * 1000).toISOString() },
+      });
+    }
   }
 
   /**

@@ -18,6 +18,22 @@ class Prefs(private val context: Context) {
 
     val deviceToken: String? get() = p.getString(KEY_TOKEN, null)
 
+    /** Head office's kiosk PIN hash from the last manifest; kept so the PIN works offline (K1). */
+    var kioskPin: KioskPinHash?
+        get() = try {
+            p.getString(KEY_KIOSK_PIN, null)?.let { pinJson.decodeFromString(KioskPinHash.serializer(), it) }
+        } catch (e: Exception) {
+            null
+        }
+        set(value) {
+            if (value == kioskPin) return
+            if (value == null) {
+                p.edit().remove(KEY_KIOSK_PIN).commit()
+            } else {
+                p.edit().putString(KEY_KIOSK_PIN, pinJson.encodeToString(KioskPinHash.serializer(), value)).commit()
+            }
+        }
+
     var paired: Boolean
         get() = p.getBoolean(KEY_PAIRED, false)
         set(value) {
@@ -75,6 +91,8 @@ class Prefs(private val context: Context) {
         const val KEY_PENDING_DEVICE = "pendingDeviceId"
         const val KEY_PENDING_TOKEN = "pendingDeviceToken"
         const val KEY_FALLBACK_ID = "fallbackHardwareId"
+        const val KEY_KIOSK_PIN = "kioskPin"
+        val pinJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
         const val BROKEN_ANDROID_ID = "9774d56d682e549c" // shared by many old devices
     }
 }

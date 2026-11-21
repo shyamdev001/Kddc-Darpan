@@ -99,6 +99,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private var stagedRaw: String? = null
     private var stagedAt = 0L
     private var brightness: Int? = null // percent from the display hours; null = the TV's own
+    private val menuPresses = KioskPin.Presses()
+    private var pinDialog: android.app.AlertDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -172,7 +174,22 @@ class MainActivity : Activity(), DeviceLink.Listener {
             }
         }
 
-        if (prefs.serverUrl.isBlank()) showSetup(null) else begin()
+        // Right after a crash the app waits before running again (K2), however it was reopened:
+        // Android reopening its home app or the watchdog must not restart a crash loop at once.
+        val wait = crashes.coolDownMs(SystemClock.elapsedRealtime())
+        if (wait > 0) {
+            idlePanel.visibility = View.VISIBLE
+            idleDetail.text = getString(R.string.restart_wait, ((wait + 999) / 1000).toInt())
+            flow = scope.launch {
+                delay(wait)
+                idlePanel.visibility = View.GONE
+                if (prefs.serverUrl.isBlank()) showSetup(null) else begin()
+            }
+        } else if (prefs.serverUrl.isBlank()) {
+            showSetup(null)
+        } else {
+            begin()
+        }
         scope.launch { kioskLoop() }
         registerReceiver(screenPower, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -222,8 +239,10 @@ class MainActivity : Activity(), DeviceLink.Listener {
         var last = Kiosk.state(this)
         while (scope.isActive) {
             delay(30_000)
-            if (Kiosk.isOwner(this) && !Kiosk.inMaintenance(this)) {
+            if (Kiosk.holds(this)) {
                 if (visible) Kiosk.enforce(this) else Kiosk.bringToFront(this)
+            } else if (Kiosk.isOwner(this) && visible) {
+                Kiosk.enforce(this) // maintenance or exited: keeps the TV unlocked as it should be
             }
             val now = Kiosk.state(this)
             if (now != last) {
@@ -234,20 +253,80 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     /**
-     * The TV's own settings (Wi-Fi, display). In kiosk mode they open only during maintenance:
-     * started from the dashboard, or right here when the TV cannot reach the server (a changed
-     * Wi-Fi password must be fixable at the branch).
+     * Menu on a locked kiosk TV (K1). With a PIN from head office: Menu five times within three
+     * seconds asks for it, online or offline. Without one: the older rule, Menu unlocks while the TV
+     * cannot reach the server (a changed Wi-Fi password must be fixable at the branch), so a TV is
+     * never left with no local way in. Either way the unlock lasts 15 minutes and is logged.
      */
-    private fun openTvSettings() {
-        if (Kiosk.isOwner(this) && !Kiosk.inMaintenance(this)) {
-            if (link?.connected == true) {
+    private fun lockedMenu() {
+        val sequence = menuPresses.press(SystemClock.elapsedRealtime())
+        val pin = prefs.kioskPin
+        if (pin == null) {
+            if (link?.connected != true) {
+                unlockHere("offlineUnlock", getString(R.string.kiosk_offline_unlock))
+            } else if (menuPresses.count <= 1) {
                 Toast.makeText(this, getString(R.string.kiosk_locked), Toast.LENGTH_LONG).show()
-                return
             }
-            Kiosk.startMaintenance(this)
-            link?.sendHeartbeat()
-            Toast.makeText(this, getString(R.string.kiosk_offline_unlock), Toast.LENGTH_LONG).show()
+            return
         }
+        if (sequence) askPin(pin) else if (menuPresses.count == 1) Toast.makeText(this, getString(R.string.kiosk_locked_pin), Toast.LENGTH_LONG).show()
+    }
+
+    private fun askPin(pin: KioskPinHash) {
+        if (pinDialog?.isShowing == true) return
+        val blocked = KioskPin.blockedFor(KioskPin.gate(this), System.currentTimeMillis())
+        if (blocked > 0) {
+            Toast.makeText(this, getString(R.string.kiosk_pin_blocked, ((blocked + 59_999) / 60_000).toInt()), Toast.LENGTH_LONG).show()
+            return
+        }
+        val input = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            filters = arrayOf<android.text.InputFilter>(android.text.InputFilter.LengthFilter(12))
+        }
+        pinDialog = android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.kiosk_pin_title)
+            .setMessage(R.string.kiosk_pin_hint)
+            .setView(input)
+            .setPositiveButton(R.string.kiosk_pin_unlock) { _, _ -> checkPin(input.text.toString(), pin) }
+            .setNegativeButton(R.string.kiosk_pin_cancel, null)
+            .create()
+            .also {
+                it.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+                it.show()
+                input.requestFocus()
+            }
+    }
+
+    private fun checkPin(entered: String, pin: KioskPinHash) {
+        scope.launch {
+            val ok = withContext(Dispatchers.Default) { runCatching { KioskPin.matches(entered.trim(), pin) }.getOrDefault(false) }
+            val now = System.currentTimeMillis()
+            if (ok) {
+                KioskPin.saveGate(this@MainActivity, KioskPin.Gate())
+                unlockHere("pinUnlock", getString(R.string.kiosk_pin_ok))
+                return@launch
+            }
+            val (gate, blockedNow) = KioskPin.wrong(KioskPin.gate(this@MainActivity), now)
+            KioskPin.saveGate(this@MainActivity, gate)
+            KioskPin.record(this@MainActivity, if (blockedNow) "pinBlocked" else "pinFailed", now)
+            link?.sendHeartbeat()
+            val text = if (blockedNow) getString(R.string.kiosk_pin_blocked, (KioskPin.BLOCK_MS / 60_000).toInt()) else getString(R.string.kiosk_pin_wrong)
+            Toast.makeText(this@MainActivity, text, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Opens maintenance from the TV itself, records it for the activity log, and opens settings. */
+    private fun unlockHere(kind: String, message: String) {
+        Kiosk.startMaintenance(this)
+        KioskPin.record(this, kind)
+        link?.sendHeartbeat()
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        openTvSettings()
+    }
+
+    /** The TV's own settings (Wi-Fi, display). In kiosk mode only once unlocked (see [lockedMenu]). */
+    private fun openTvSettings() {
+        if (Kiosk.holds(this)) return lockedMenu()
         try {
             startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: Exception) {
@@ -274,8 +353,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 // Before pairing: server setup.
                 showSetup(null)
             } else {
-                // On the server screen or while live: the TV's own settings (Wi-Fi, display).
-                openTvSettings()
+                // On the server screen or while live: the TV's own settings (Wi-Fi, display),
+                // or on a locked kiosk TV the PIN (K1).
+                if (Kiosk.holds(this)) lockedMenu() else openTvSettings()
             }
             return true
         }
@@ -288,6 +368,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         } catch (e: IllegalArgumentException) {
             // never registered
         }
+        pinDialog?.dismiss()
         stopLive()
         broadcasts.stop()
         playback.release()
@@ -462,7 +543,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
             val m = api.parseManifest(raw)
             offer(raw, m)
             link?.sendHeartbeat()
-            scope.launch { updater.consider(m.app) } // may wait minutes; must not hold the sync lock
+            // May wait minutes; must not hold the sync lock. In rescue mode without the usual spread:
+            // a fixed version is how a crash-looping TV gets well again (K2, K3).
+            scope.launch { updater.consider(m.app, urgent = crashes.inRescue()) }
             return@withLock true
         } catch (e: CancellationException) {
             throw e
@@ -536,10 +619,18 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     private val crashes: CrashLog get() = (application as DarpanApp).crashes
 
-    /** In safe mode (many crashes lately) only posters play; the saved manifest stays complete. */
-    private fun forThisTv(m: Manifest): Manifest = if (crashes.inSafeMode()) CrashLog.strip(m) else m
+    /**
+     * In safe mode (many crashes lately) only posters play; in rescue mode (still crashing) only the
+     * default slide. The saved manifest stays complete.
+     */
+    private fun forThisTv(m: Manifest): Manifest = when {
+        crashes.inRescue() -> CrashLog.rescue(m)
+        crashes.inSafeMode() -> CrashLog.strip(m)
+        else -> m
+    }
 
     private fun applyManifest(m: Manifest) {
+        prefs.kioskPin = m.settings.kioskPin // kept, so the PIN works with no server (K1)
         // The server's clock, even from a saved manifest, beats a TV clock reset by a power cut.
         m.generatedAt?.let { parseIso(it) }?.let { TrustedClock.serverTime(it) }
         applyOrientation(m.settings.orientation == "PORTRAIT")
@@ -652,6 +743,19 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 val ok = Kiosk.startMaintenance(this)
                 l?.sendAck(commandId, ok, if (ok) null else "Kiosk mode is not set up on this TV")
                 l?.sendHeartbeat()
+            }
+            // Head office takes the TV out of kiosk mode (K7). The server allows these to a super
+            // admin with a fresh two-step code only. "kioskLock" puts an exited TV back.
+            "kioskExit" -> {
+                val ok = Kiosk.exit(this)
+                l?.sendAck(commandId, ok, if (ok) null else "Kiosk mode is not set up on this TV")
+                link?.sendHeartbeat()
+            }
+            "kioskRemoveOwner" -> {
+                val owner = Kiosk.isOwner(this)
+                val ok = owner && Kiosk.removeOwner(this)
+                l?.sendAck(commandId, ok, if (ok) null else if (!owner) "Kiosk mode is not set up on this TV" else "The TV refused to give up device owner; it is out of kiosk mode")
+                link?.sendHeartbeat()
             }
             "kioskLock" -> {
                 val ok = Kiosk.endMaintenance(this)
@@ -768,6 +872,17 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .put("broadcastId", broadcasts.currentId ?: JSONObject.NULL)
             .put("broadcastStatus", broadcasts.status ?: JSONObject.NULL)
             .put("safeMode", crashes.inSafeMode())
+            .put("rescueMode", crashes.inRescue())
+            .put("kioskPinSet", prefs.kioskPin != null)
+            // Local unlocks and wrong PINs of the last day; the server logs each id once (K1).
+            .put(
+                "kioskEvents",
+                JSONArray(
+                    KioskPin.events(this).map {
+                        JSONObject().put("id", it.id).put("kind", it.kind).put("agoSec", ((System.currentTimeMillis() - it.at) / 1000).coerceAtLeast(0L))
+                    },
+                ),
+            )
             .put("capabilities", JSONObject(heartbeatJson.encodeToString(Capabilities.report(this))))
             .put("crash", crashes.report()?.let { JSONObject(heartbeatJson.encodeToString(it)) } ?: JSONObject.NULL)
             .put("sync", syncReport())

@@ -60,7 +60,7 @@ export function UpdatesView() {
 
   if (!data) return error ? <p className="text-destructive">{error}</p> : <div className="h-96 animate-pulse rounded-xl bg-muted" />;
 
-  const kioskCount = data.screens.filter((s) => s.kiosk === "locked" || s.kiosk === "maintenance").length;
+  const kioskCount = data.screens.filter((s) => s.kiosk === "locked" || s.kiosk === "maintenance" || s.kiosk === "exited").length;
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
@@ -324,7 +324,7 @@ function TestScreens({ screens, onSaved }: { screens: UpdateScreenEntry[]; onSav
                 </div>
                 <span className="text-muted-foreground">
                   {s.appVersion ? `Version ${s.appVersion}` : "Version unknown"}
-                  {s.kiosk !== "locked" && s.kiosk !== "maintenance" && ", not in kiosk mode (update by hand)"}
+                  {s.kiosk !== "locked" && s.kiosk !== "maintenance" && s.kiosk !== "exited" && ", not in kiosk mode (update by hand)"}
                   {!s.online && ", offline"}
                 </span>
                 {s.updateStatus && (

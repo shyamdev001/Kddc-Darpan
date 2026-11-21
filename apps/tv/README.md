@@ -84,14 +84,31 @@ Set it up once per TV, after a factory reset and before signing in to any accoun
 Maintenance (Wi-Fi changes, display settings):
 - From the dashboard: Screens > the screen > Remote control > **Unlock for 15 min**. Menu then opens the TV's
   settings. It locks again by itself after 15 minutes, or at once with **Lock now**.
-- At the branch, when the TV cannot reach the server (for example the Wi-Fi password changed), the Menu key
-  unlocks the settings for 15 minutes on the spot, so it can be fixed without the dashboard.
+- At the branch, with the kiosk PIN (set by a super admin on App updates > Kiosk unlock PIN): press Menu
+  5 times within 3 seconds and enter the PIN. The settings open for 15 minutes, also without a network.
+  The TV checks the PIN itself against a salted hash from its last sync. 5 wrong PINs block it for 15
+  minutes. Unlocks and wrong PINs show in the activity log once the TV is back online.
+- With no PIN set, and only while the TV cannot reach the server (for example the Wi-Fi password changed),
+  the Menu key unlocks the settings for 15 minutes on the spot.
+
+Crashes:
+- After a crash the app restarts after 3 s, then 10 s, 30 s, 2 min, and at most every 5 min while it keeps
+  crashing (the screen says "Restarting in …"). Repeated crashes put it in safe mode (posters only).
+- A crash while in safe mode, or 10 crashes in 30 minutes, puts it in **rescue mode**: it shows only the
+  default slide, keeps syncing and checking for a new app version (installed at once, no waiting), and
+  allows adb even while locked. It ends an hour after the last crash, on Restart app from the dashboard,
+  or when a new app version starts. While a test screen is in safe or rescue mode on a version, that
+  version cannot be released to all.
 
 Notes:
 - App updates must be signed with the same key (the GitHub signing secrets); a differently signed APK
   cannot replace a device-owner app.
 - A TV has only one device owner. TVs still running the old vendor kiosk app need a factory reset first.
-- To take kiosk mode off a TV, factory reset it.
+- To take kiosk mode off a TV: a super admin opens the screen > Remote control > **Take out of kiosk
+  mode…**, types the screen's name, a reason and a code from the two-step app. **Leave kiosk mode** keeps
+  Darpan as device owner (Lock again puts it back); **Also remove Darpan as device owner** cannot be undone
+  from the dashboard (locking it again needs a factory reset), and the app can then be uninstalled. A
+  factory reset also works.
 
 ## Brightness
 Set on the dashboard with the display hours (Schedules > Display hours > Set screen brightness). The TV

@@ -59,6 +59,29 @@ export interface ManifestSettings {
   hours: DisplayHoursValue | null;
   /** Keep to the shared timeline, in step with the other TVs (set per branch). */
   sync?: boolean;
+  /**
+   * The kiosk PIN for the local unlock (Menu five times, then the PIN), as a salted
+   * PBKDF2-HMAC-SHA1 hash, never the PIN. null: none set (the TV unlocks with Menu only while it
+   * cannot reach the server). The TV keeps it, so it works offline.
+   */
+  kioskPin?: KioskPinHash | null;
+}
+
+export interface KioskPinHash {
+  /** hex */
+  salt: string;
+  /** hex, 32 bytes */
+  hash: string;
+  iterations: number;
+}
+
+export const KIOSK_EVENT_KINDS = ['pinUnlock', 'pinFailed', 'pinBlocked', 'offlineUnlock'] as const;
+
+/** A local unlock or a wrong PIN on the TV, kept a day on the TV; the server logs each id once. */
+export interface KioskEventPayload {
+  id: string;
+  kind: (typeof KIOSK_EVENT_KINDS)[number];
+  agoSec: number;
 }
 
 /** How a TV keeps to the shared timeline, sent in each heartbeat. */
@@ -138,6 +161,12 @@ export interface HeartbeatPayload {
   crash?: CrashReportPayload | null;
   /** Many crashes lately: playing posters only (no video, no live links) for a while. */
   safeMode?: boolean;
+  /** Still crashing in safe mode: only the default slide, but it keeps syncing, updating and allows adb. */
+  rescueMode?: boolean;
+  /** The TV holds a kiosk PIN from head office. */
+  kioskPinSet?: boolean;
+  /** Local unlocks and wrong PINs of the last day. */
+  kioskEvents?: KioskEventPayload[];
   /** What this TV model can do, detected on the TV at each start. */
   capabilities?: TvCapabilities;
   /** Videos this TV cannot play (its decoder or sound output refused them); it skips them. */
@@ -253,6 +282,10 @@ export type DeviceCommandType =
   | 'clearCache'
   | 'kioskUnlock'
   | 'kioskLock'
+  /** Out of kiosk mode until 'kioskLock' (super admin with a fresh two-step code only). */
+  | 'kioskExit'
+  /** Out of kiosk mode and no longer device owner; one-way (super admin with a fresh two-step code only). */
+  | 'kioskRemoveOwner'
   /** Switch the panel off for 10 s and back on: finds out whether this TV model can sleep at night. */
   | 'screenOffTest'
   | 'emergency:show'

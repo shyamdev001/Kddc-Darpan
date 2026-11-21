@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { KIOSK_MAINTENANCE_MIN, type KioskState, type RemoteCommandType, type ScreenCommandEntry, type ScreenDetail } from "@darpan/shared";
-import { Camera, Eraser, Loader2, Lock, LockOpen, MoonStar, Power, RefreshCw } from "lucide-react";
+import { KIOSK_MAINTENANCE_MIN, type KioskReleaseAction, type KioskState, type RemoteCommandType, type ScreenCommandEntry, type ScreenDetail } from "@darpan/shared";
+import { Camera, DoorOpen, Eraser, Loader2, Lock, LockOpen, MoonStar, Power, RefreshCw } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -13,6 +13,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useSessionUser } from "@/components/session-context";
 import { apiFetch } from "@/lib/api-client";
 import { formatAgo } from "@/lib/format";
 
@@ -24,6 +27,8 @@ const LABEL: Record<string, string> = {
   kioskUnlock: "Unlock for maintenance",
   kioskLock: "Lock",
   screenOffTest: "Test screen off",
+  kioskExit: "Take out of kiosk mode",
+  kioskRemoveOwner: "Remove device owner",
 };
 
 const TIME = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
@@ -69,6 +74,8 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
   const [list, setList] = useState<ScreenCommandEntry[] | null>(null);
   const [sending, setSending] = useState<RemoteCommandType | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const me = useSessionUser();
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(0);
 
@@ -160,6 +167,13 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
 
         <KioskRow state={kiosk.state} until={kiosk.until} busy={kioskBusy} disabled={offline || sending !== null} onSend={(t) => void send(t)} />
 
+        {me?.role === "SUPER_ADMIN" && (kiosk.state === "locked" || kiosk.state === "maintenance" || kiosk.state === "exited") && (
+          <Button variant="outline" disabled={offline} onClick={() => setReleaseOpen(true)} className="h-10 justify-start px-3 text-destructive hover:text-destructive">
+            <DoorOpen data-icon="inline-start" />
+            Take out of kiosk mode…
+          </Button>
+        )}
+
         {screen.adbEnabled && (
           <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-sm text-destructive">
             <span className="font-medium">Android debugging (adb) is on.</span> Anyone on the branch network could control this TV
@@ -220,7 +234,135 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {releaseOpen && (
+        <ReleaseDialog
+          screen={screen}
+          exited={kiosk.state === "exited"}
+          onClose={() => setReleaseOpen(false)}
+          onSent={(rows) => {
+            accept(rows);
+            setReleaseOpen(false);
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+/**
+ * K7: takes this TV out of kiosk mode (it then behaves like a normal TV until it is locked again
+ * from here), or also removes Darpan as device owner, before the TV is handed back or given to
+ * another app. Super admins only, with a fresh two-step code, the screen's name typed to be sure it
+ * is the right TV, and a reason for the activity log.
+ */
+function ReleaseDialog({
+  screen,
+  exited,
+  onClose,
+  onSent,
+}: {
+  screen: ScreenDetail;
+  exited: boolean;
+  onClose: () => void;
+  onSent: (rows: ScreenCommandEntry[]) => void;
+}) {
+  const [action, setAction] = useState<KioskReleaseAction>(exited ? "removeOwner" : "exit");
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [reason, setReason] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const nameOk = name.trim().normalize("NFC").toLowerCase() === (screen.name ?? "").trim().normalize("NFC").toLowerCase();
+  const ok = nameOk && /^\S{6,40}$/.test(code) && reason.trim().length >= 5;
+
+  async function submit() {
+    setSending(true);
+    setError(null);
+    try {
+      onSent(
+        await apiFetch<ScreenCommandEntry[]>(`/api/screens/${screen.id}/kiosk-release`, {
+          method: "POST",
+          body: JSON.stringify({ action, code, confirmName: name, reason }),
+        }),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+      setSending(false);
+    }
+  }
+
+  return (
+    <AlertDialog open onOpenChange={(o) => !o && onClose()}>
+      <AlertDialogContent>
+        <form
+          className="grid gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (ok && !sending) void submit();
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Take “{screen.name}” out of kiosk mode?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Anyone with the remote can then leave Darpan and change the TV&apos;s settings. This is for a TV that is being
+              handed back, repaired elsewhere or given to another app. To open the settings for a while, use the unlock
+              button instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <fieldset className="grid gap-2 text-sm">
+            <legend className="mb-1 font-medium">What to do</legend>
+            {!exited && (
+              <label className="flex items-start gap-2">
+                <input type="radio" name="release" className="mt-1" checked={action === "exit"} onChange={() => setAction("exit")} />
+                <span>
+                  <span className="font-medium">Leave kiosk mode.</span>{" "}
+                  <span className="text-muted-foreground">Darpan keeps playing and stays device owner; it can be locked again from here.</span>
+                </span>
+              </label>
+            )}
+            <label className="flex items-start gap-2">
+              <input type="radio" name="release" className="mt-1" checked={action === "removeOwner"} onChange={() => setAction("removeOwner")} />
+              <span>
+                <span className="font-medium">Also remove Darpan as device owner.</span>{" "}
+                <span className="text-muted-foreground">
+                  Cannot be undone from here: locking this TV again needs a factory reset and setup with a cable. The app can
+                  then be uninstalled.
+                </span>
+              </span>
+            </label>
+          </fieldset>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="release-name">Type the screen&apos;s name: {screen.name}</Label>
+            <Input id="release-name" autoComplete="off" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="release-reason">Why (kept in the activity log)</Label>
+            <Input id="release-reason" maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="release-code">Code from your two-step app</Label>
+            <Input id="release-code" inputMode="numeric" autoComplete="one-time-code" maxLength={40} value={code} onChange={(e) => setCode(e.target.value.trim())} />
+          </div>
+
+          {error && (
+            <p role="alert" className="rounded-md border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">Keep it locked</AlertDialogCancel>
+            <Button type="submit" variant="destructive" disabled={!ok || sending}>
+              {sending && <Loader2 className="animate-spin" data-icon="inline-start" />}
+              {action === "exit" ? "Take out of kiosk mode" : "Remove device owner"}
+            </Button>
+          </AlertDialogFooter>
+        </form>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -238,6 +380,19 @@ function KioskRow({
   onSend: (type: RemoteCommandType) => void;
 }) {
   if (state === null) return null; // app version from before kiosk mode
+  if (state === "exited") {
+    return (
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-destructive/[0.06] px-3 py-2">
+        <p className="text-sm text-destructive">
+          <span className="font-medium">Taken out of kiosk mode.</span> The remote can leave the app. Darpan is still device owner.
+        </p>
+        <Button variant="outline" disabled={disabled || busy} onClick={() => onSend("kioskLock")} className="h-10 px-3">
+          {busy ? <Loader2 className="animate-spin" data-icon="inline-start" /> : <Lock data-icon="inline-start" />}
+          Lock again
+        </Button>
+      </div>
+    );
+  }
   if (state === "off") {
     return (
       <p className="rounded-md bg-mist/60 px-3 py-2 text-sm text-muted-foreground">

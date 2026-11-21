@@ -66,7 +66,11 @@ export class CommandsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async send(screenId: string, type: RemoteCommandType, user: AuthUser, ip?: string): Promise<ScreenCommandEntry[]> {
+  /**
+   * [type] is a dashboard command, or one of the kiosk release commands, which only KioskService
+   * sends (super admin, fresh two-step code). [extra] goes into the audit row, e.g. the reason.
+   */
+  async send(screenId: string, type: RemoteCommandType | 'kioskExit' | 'kioskRemoveOwner', user: AuthUser, ip?: string, extra?: Record<string, string>): Promise<ScreenCommandEntry[]> {
     const screen = await this.prisma.screen.findUnique({ where: { id: screenId }, select: { id: true, name: true, status: true } });
     if (!screen) throw new NotFoundException('Screen not found');
     if (screen.status === 'PENDING') throw new ConflictException('Pair this screen before sending it commands.');
@@ -93,7 +97,7 @@ export class CommandsService implements OnModuleInit, OnModuleDestroy {
       action: `screen.command.${type}`,
       entityType: 'Screen',
       entityId: screenId,
-      details: { commandId: cmd.id, screen: screen.name },
+      details: { commandId: cmd.id, screen: screen.name, ...extra },
       ipAddress: ip,
     });
     return this.list(screenId);

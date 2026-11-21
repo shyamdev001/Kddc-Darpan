@@ -21,6 +21,11 @@ class DebugPolicyTest {
     }
 
     @Test
+    fun rescueMode_allowsDebugging_soACrashLoopingTvStaysFixable() {
+        assertFalse(DebugPolicy.block(owner = true, inMaintenance = false, debugBuild = false, rescue = true))
+    }
+
+    @Test
     fun headOfficeDebugBuild_keepsAdbForInstalling() {
         assertFalse(DebugPolicy.block(owner = true, inMaintenance = false, debugBuild = true))
     }

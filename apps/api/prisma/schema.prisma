@@ -151,6 +151,8 @@ model Screen {
   unplayable      Json? // videos this TV cannot play, as it reported them: [{mediaId, reason}]
   tvOff           Json? // the TV itself took the screen away in display hours: {kind, at, backAt, count}
   safeMode        Boolean   @default(false) // crash-looping: posters only for now
+  rescueMode      Boolean   @default(false) // still crashing in safe mode: default slide only, keeps syncing and updating (K2)
+  kioskPinSet     Boolean? // the TV holds the kiosk PIN; null = app too old to say
   capabilities    Json? // what this TV model can do (WebView, decoders, brightness, screen-off...), from the TV
   playSync        Json? // how well the TV keeps to the shared timeline (mode, clock error, video drift), from the heartbeat
   broadcastId     String?   @db.Uuid // the broadcast the TV says it is showing (no FK: it may be deleted)
@@ -451,6 +453,18 @@ model AppRelease {
 }
 
 /// Offline-alert settings (one row, id 1). Times are India time.
+/// Kiosk settings (one row, id 1). The local unlock PIN is kept only as a salted PBKDF2-HMAC-SHA1
+/// hash, the same form the TVs get in their manifest; never the PIN itself.
+model KioskSettings {
+  id            Int       @id @default(1)
+  pinSalt       String? // hex
+  pinHash       String? // hex, 32 bytes
+  pinIterations Int?
+  pinSetAt      DateTime?
+  pinSetById    String?   @db.Uuid
+  updatedAt     DateTime  @updatedAt
+}
+
 model AlertSettings {
   id              Int      @id @default(1)
   enabled         Boolean  @default(true)

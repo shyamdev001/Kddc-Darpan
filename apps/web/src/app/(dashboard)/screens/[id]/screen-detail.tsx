@@ -512,7 +512,14 @@ function DeviceCard({
               : "The TV keeps playing what it has and tries again on the next update."}
           </p>
         )}
-        {screen.safeMode && (
+        {screen.rescueMode && (
+          <p role="status" className="border-b bg-destructive/[0.06] px-4 py-2.5 text-sm text-destructive sm:px-5">
+            <span className="font-medium">Rescue mode: the default slide only.</span> This version of the app kept crashing, so the
+            TV shows only the default slide, keeps checking for a fixed version and allows adb, for an hour after the last crash.
+            Release a fixed version, or restart the app from this page to try again.
+          </p>
+        )}
+        {screen.safeMode && !screen.rescueMode && (
           <p role="status" className="border-b bg-destructive/[0.06] px-4 py-2.5 text-sm text-destructive sm:px-5">
             <span className="font-medium">Safe mode: posters only.</span> The app crashed again and again, so for up to an hour it skips
             videos and live links. Restart the app from this page to try everything again.

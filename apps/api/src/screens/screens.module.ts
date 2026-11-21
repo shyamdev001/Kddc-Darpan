@@ -8,11 +8,13 @@ import { ScreensService } from './screens.service';
 import { DeviceGuard } from './device-auth';
 import { DevicesGateway } from './devices.gateway';
 import { CommandsService } from './commands.service';
+import { KioskService } from './kiosk.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [MediaModule],
+  imports: [MediaModule, AuthModule],
   controllers: [ScreensController, DevicesController],
-  providers: [ScreensService, ManifestService, PlaylistResolver, DeviceGuard, DevicesGateway, CommandsService],
+  providers: [ScreensService, ManifestService, PlaylistResolver, DeviceGuard, DevicesGateway, CommandsService, KioskService],
   exports: [ManifestService, PlaylistResolver],
 })
 export class ScreensModule {}
