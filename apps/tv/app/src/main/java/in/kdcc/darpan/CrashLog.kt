@@ -40,6 +40,8 @@ private data class CrashFile(
     val rescueVersion: Int = 0,
     /** When the next start may run the app (elapsedRealtime of this boot), or 0. */
     val restartDue: Long = 0,
+    /** elapsedRealtime of the last crash: an uptime below it means the TV has rebooted since. */
+    val crashedAtElapsed: Long = 0,
 )
 
 /**
@@ -74,6 +76,7 @@ class CrashLog(dir: File, private val versionCode: Int = 0) {
     /** elapsedRealtime when the app may run again after the last crash, or 0. */
     var restartDue: Long = 0
         private set
+    private var crashedAtElapsed: Long = 0
 
     init {
         load()
@@ -89,9 +92,11 @@ class CrashLog(dir: File, private val versionCode: Int = 0) {
     /**
      * How long this start must wait before running the app (ms), 0 when it may run now. A start
      * sooner than the crash log allows (Android reopening its home app, the watchdog) waits here
-     * instead of crashing again at once. A value from another boot (larger than any wait) is ignored.
+     * instead of crashing again at once. After a reboot (the uptime clock is below the crash's) there is
+     * no wait.
      */
     fun coolDownMs(elapsedNow: Long): Long {
+        if (elapsedNow < crashedAtElapsed) return 0
         val wait = restartDue - elapsedNow
         return if (wait in 1..MAX_DELAY_MS) wait else 0
     }
@@ -119,6 +124,7 @@ class CrashLog(dir: File, private val versionCode: Int = 0) {
             if (shouldEnterSafeMode(times, now)) safeUntil = now + SAFE_FOR_MS
             val delay = restartDelayMs(times, now)
             restartDue = elapsedNow + delay
+            crashedAtElapsed = elapsedNow
             save()
             return delay
         } catch (_: Throwable) {
@@ -132,6 +138,7 @@ class CrashLog(dir: File, private val versionCode: Int = 0) {
         safeUntil = 0
         rescueUntil = 0
         restartDue = 0
+        crashedAtElapsed = 0
         times = emptyList()
         save()
     }
@@ -153,6 +160,7 @@ class CrashLog(dir: File, private val versionCode: Int = 0) {
             rescueUntil = f.rescueUntil
             rescueVersion = f.rescueVersion
             restartDue = f.restartDue
+            crashedAtElapsed = f.crashedAtElapsed
         } catch (_: Exception) {
             // A damaged file only loses the crash history.
         }
@@ -160,7 +168,7 @@ class CrashLog(dir: File, private val versionCode: Int = 0) {
 
     private fun save() {
         val tmp = File(file.path + ".tmp")
-        tmp.writeText(json.encodeToString(CrashFile(times, total, safeUntil, last, rescueUntil, rescueVersion, restartDue)))
+        tmp.writeText(json.encodeToString(CrashFile(times, total, safeUntil, last, rescueUntil, rescueVersion, restartDue, crashedAtElapsed)))
         tmp.renameTo(file)
     }
 
