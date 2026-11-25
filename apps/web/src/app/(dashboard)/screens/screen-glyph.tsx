@@ -1,4 +1,5 @@
 import type { ScreenSummary } from "@darpan/shared";
+import { formatAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /**
@@ -34,13 +35,24 @@ export function ScreenGlyph({ screen, size = "md" }: { screen: Pick<ScreenSummar
   );
 }
 
-/** "Online", "Offline, last seen 2 h ago", or "Needs pairing", as text with a coloured dot. */
-export function ScreenStatusText({ screen, ago }: { screen: Pick<ScreenSummary, "online" | "paired">; ago: string | null }) {
+/**
+ * "Online", "Online, connection lost 1 min ago", "Offline, last seen 2 h ago", or "Needs pairing",
+ * as text with a coloured dot. A lost connection turns into Offline after 3 missed heartbeats.
+ */
+export function ScreenStatusText({ screen, ago }: { screen: Pick<ScreenSummary, "online" | "paired" | "connectionLostAt">; ago: string | null }) {
   if (!screen.paired) {
     return (
       <span className="inline-flex items-center gap-1.5 font-medium text-[#8a5a00]">
         <span className="size-2 rounded-full bg-haldi" />
         Needs pairing again
+      </span>
+    );
+  }
+  if (screen.online && screen.connectionLostAt) {
+    return (
+      <span className="inline-flex items-center gap-1.5 font-medium text-[#8a5a00]" title="Shown as offline once it has missed 3 heartbeats (3 minutes)">
+        <span className="size-2 rounded-full bg-haldi" />
+        Online, connection lost {formatAgo(screen.connectionLostAt)}
       </span>
     );
   }

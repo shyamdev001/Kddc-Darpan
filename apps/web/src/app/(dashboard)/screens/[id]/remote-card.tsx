@@ -146,7 +146,7 @@ export function RemoteCard({ screen }: { screen: ScreenDetail }) {
 
   const shot = list?.find((c) => c.screenshotUrl);
   const shotPending = list?.some((c) => c.type === "screenshot" && waiting(c)) ?? false;
-  const offline = !screen.online || !screen.paired;
+  const offline = !screen.online || !screen.paired || !!screen.connectionLostAt;
   const kiosk = kioskNow(screen, list, now);
   // Greyed out with the reason below: what this TV reported it cannot do (or an app too old to know).
   const notes = unsupportedNotes(screen);

@@ -566,6 +566,7 @@ export class ScreensService implements OnModuleInit, OnModuleDestroy {
       name: s.name ?? 'Unnamed screen',
       paired,
       online: isOnline(s),
+      connectionLostAt: isOnline(s) ? (this.gateway.connectionLostAt(s.id, s.lastSeenAt)?.toISOString() ?? null) : null,
       lastSeenAt: s.lastSeenAt?.toISOString() ?? null,
       orientation: s.orientation,
       branch: s.branch ? { id: s.branch.id, name: s.branch.name, code: s.branch.code } : null,

@@ -76,6 +76,12 @@ export interface ScreenSummary {
   /** false when the TV was reset and must be paired again */
   paired: boolean;
   online: boolean;
+  /**
+   * Set while the screen still counts as online (it has 3 minutes from its last heartbeat) but its
+   * live connection is already gone: the app was closed, the TV switched off or the network dropped.
+   * When it was lost; the last heartbeat when the server restarted since.
+   */
+  connectionLostAt: string | null;
   lastSeenAt: string | null;
   orientation: Orientation;
   branch: BranchRef | null;

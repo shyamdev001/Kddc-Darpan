@@ -577,7 +577,9 @@ function DeviceCard({
           <ScreenGlyph screen={screen} size="lg" />
         </div>
         <p className="border-b px-4 py-2.5 text-sm text-muted-foreground sm:px-5">
-          {screen.online && screen.nowPlaying ? `Showing ${screen.nowPlaying.displayName}` : screen.online ? "Connected; it has not reported what is on screen yet" : "Not connected right now"}
+          {screen.online && screen.connectionLostAt
+            ? "Connection lost: the app was closed, the TV switched off or its network dropped. It shows as offline if it does not come back within 3 minutes of its last heartbeat."
+            : screen.online && screen.nowPlaying ? `Showing ${screen.nowPlaying.displayName}` : screen.online ? "Connected; it has not reported what is on screen yet" : "Not connected right now"}
         </p>
         {filesProblem(screen.files) && (
           <p role="status" className="border-b bg-haldi/15 px-4 py-2.5 text-sm text-[#6b4a00] sm:px-5">

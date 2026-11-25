@@ -58,6 +58,11 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
 
   @WebSocketServer() private readonly ns!: Namespace;
 
+  // Live connections per screen (a TV may briefly have two while it reconnects), and when the last
+  // one closed. In memory: this server is the only one, and a restart starts every screen afresh.
+  private readonly live = new Map<string, number>();
+  private readonly lostAt = new Map<string, Date>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly manifests: ManifestService,
@@ -126,6 +131,8 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
           if (!screen) return next(new Error('unauthorized'));
           (socket.data as DeviceData).screenId = screen.id;
           await socket.join(room(screen.id));
+          this.live.set(screen.id, (this.live.get(screen.id) ?? 0) + 1);
+          this.lostAt.delete(screen.id);
           await this.prisma.screen.update({
             where: { id: screen.id },
             data: {
@@ -152,7 +159,26 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     // Not marked offline here: a short network drop reconnects within seconds. The sweep marks it
     // offline once it has missed 3 heartbeats.
     const screenId = (socket.data as Partial<DeviceData>).screenId;
-    if (screenId) this.logger.log(`Screen ${screenId} disconnected`);
+    if (!screenId) return;
+    this.logger.log(`Screen ${screenId} disconnected`);
+    const left = (this.live.get(screenId) ?? 1) - 1;
+    if (left > 0) {
+      this.live.set(screenId, left);
+      return;
+    }
+    this.live.delete(screenId);
+    this.lostAt.set(screenId, new Date());
+    // The dashboard shows "connection lost" at once; offline still waits for the sweep.
+    this.events.screenUpdated(screenId);
+  }
+
+  /**
+   * When this screen's live connection went away, or null while it is connected. A screen that has
+   * not connected since this server started counts as lost at `fallback` (its last heartbeat).
+   */
+  connectionLostAt(screenId: string, fallback: Date | null): Date | null {
+    if ((this.live.get(screenId) ?? 0) > 0) return null;
+    return this.lostAt.get(screenId) ?? fallback;
   }
 
   @SubscribeMessage('heartbeat')

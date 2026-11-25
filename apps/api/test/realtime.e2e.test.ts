@@ -141,6 +141,43 @@ describe('live dashboard updates', () => {
   });
 });
 
+describe('a closed app shows at once', () => {
+  it('stays online for 3 minutes but says "connection lost" from the moment it drops, live; cleared on reconnect', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Closed app TV');
+    const detail = async () => (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body;
+    const inList = async () => ((await call(t.base, 'GET', '/screens', { cookie: admin })).body.items as { id: string; connectionLostAt: string | null }[]).find((s) => s.id === tv.deviceId)!;
+
+    const dash = dashboard(admin);
+    await connected(dash);
+    const device = tvSocket(tv.deviceToken);
+    await connected(device);
+    assert.equal((await detail()).connectionLostAt, null);
+    await new Promise((r) => setTimeout(r, 1_500)); // the connect's update has gone out
+
+    const told = updateFor(dash, tv.deviceId);
+    const before = Date.now();
+    device.disconnect();
+    await told;
+    const d = await detail();
+    assert.equal(d.online, true, 'still online within its 3 minutes');
+    assert.ok(Date.parse(d.connectionLostAt) >= before - 1_000);
+    assert.equal((await inList()).connectionLostAt, d.connectionLostAt);
+    // Commands are refused as before.
+    assert.equal((await call(t.base, 'POST', `/screens/${tv.deviceId}/commands`, { cookie: admin, body: { type: 'reload' } })).status, 409);
+
+    await connected(tvSocket(tv.deviceToken));
+    assert.equal((await detail()).connectionLostAt, null);
+  });
+
+  it('is never set on an offline screen', async () => {
+    const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Long gone TV');
+    await t.prisma.screen.update({ where: { id: tv.deviceId }, data: { status: 'OFFLINE' } });
+    const d = (await call(t.base, 'GET', `/screens/${tv.deviceId}`, { cookie: admin })).body;
+    assert.equal(d.online, false);
+    assert.equal(d.connectionLostAt, null);
+  });
+});
+
 describe('a TV removed by head office', () => {
   it('is told it was removed, so it stops and shows a new code (a refused key alone does not stop it)', async () => {
     const tv = await pairedTv(t.base, admin, places.matarBranch.id, 'Removed TV');
