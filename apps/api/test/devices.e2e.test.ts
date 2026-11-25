@@ -4,7 +4,7 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { PlaylistResolver, screenPlaceSelect } from '../src/screens/playlist-resolver.service';
-import { ManifestService } from '../src/screens/manifest.service';
+import { downloadBase, ManifestService } from '../src/screens/manifest.service';
 import { ScreensService } from '../src/screens/screens.service';
 import { assign, call, createMedia, createPlaces, createPlaylist, createUser, login, pairedTv, registerTv, resetDb, startApp, type TestApp, type TestTv } from './helpers';
 
@@ -243,6 +243,29 @@ describe('the files in a manifest', () => {
     const item = m.items.find((i: { mediaId: string }) => i.mediaId === ready.id);
     assert.equal(item.sha256, ready.sha256);
     assert.equal(item.url, `http://tv.test/api/devices/media/${ready.id}`);
+  });
+
+  it('without PUBLIC_BASE_URL, outside production, gives the address the TV itself used', async () => {
+    const saved = process.env.PUBLIC_BASE_URL;
+    delete process.env.PUBLIC_BASE_URL;
+    try {
+      const m = (await manifest(tv)).body;
+      const origin = new URL(t.base).origin; // http://127.0.0.1:<port>, what the test "TV" called
+      assert.equal(m.items.find((i: { mediaId: string }) => i.mediaId === ready.id).url, `${origin}/api/devices/media/${ready.id}`);
+    } finally {
+      process.env.PUBLIC_BASE_URL = saved;
+    }
+  });
+
+  it('picks the download address: fixed setting first, the request only outside production', () => {
+    const dev = { NODE_ENV: 'development' };
+    assert.equal(downloadBase('10.82.21.154:4000', 'http', dev), 'http://10.82.21.154:4000');
+    assert.equal(downloadBase('[fe80::1]:4000', 'http', dev), 'http://[fe80::1]:4000');
+    assert.equal(downloadBase('10.0.0.5:4000', 'http', { ...dev, PUBLIC_BASE_URL: 'http://fixed.test:4000/' }), 'http://fixed.test:4000');
+    // A made-up Host header is never used in production, and junk is never used at all.
+    assert.equal(downloadBase('evil.example', 'https', { NODE_ENV: 'production' }), 'http://localhost:4000');
+    assert.equal(downloadBase('a b/c@d', 'http', dev), 'http://localhost:4000');
+    assert.equal(downloadBase(undefined, 'http', dev), 'http://localhost:4000');
   });
 
   it('times images by the playlist default and videos by their length', async () => {

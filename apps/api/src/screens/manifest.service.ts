@@ -8,8 +8,30 @@ import { ContentEvents } from '../events/content-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlaylistResolver, screenPlaceSelect } from './playlist-resolver.service';
 
-function publicBase(): string {
-  return (process.env.PUBLIC_BASE_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
+const HOST = /^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
+
+/**
+ * Where TVs download files from. PUBLIC_BASE_URL when it is set (production must set it, see
+ * config-check). Without it, outside production, the address the TV itself used for this request:
+ * on a laptop the LAN IP changes with every Wi-Fi or hotspot, and the TV already reaches that one.
+ * Production never trusts the request's Host header, which a client can set to anything.
+ */
+export function downloadBase(host?: string, protocol?: string, env: Record<string, string | undefined> = process.env): string {
+  const fixed = (env.PUBLIC_BASE_URL ?? '').trim();
+  if (fixed) return fixed.replace(/\/+$/, '');
+  if (env.NODE_ENV !== 'production' && host && HOST.test(host)) return `${protocol === 'https' ? 'https' : 'http'}://${host}`;
+  return 'http://localhost:4000';
+}
+
+/** Manifests are built with server paths; the address is added when one is handed to a TV. */
+export function withBase(m: Manifest, base: string): Manifest {
+  const item = (i: ManifestItem): ManifestItem => ({ ...i, url: base + i.url });
+  return {
+    ...m,
+    items: m.items.map(item),
+    app: m.app ? { ...m.app, url: base + m.app.url } : null,
+    broadcast: m.broadcast?.media ? { ...m.broadcast, media: item(m.broadcast.media) } : m.broadcast,
+  };
 }
 
 /** A manifest built for a TV is reused for this long, unless content changes first. */
@@ -43,15 +65,18 @@ export class ManifestService implements OnModuleDestroy {
     else for (const id of screenIds) this.cache.delete(id);
   }
 
-  /** For the TV's own fetch: the recently built manifest when nothing changed since, else a new one. */
-  async forDevice(screenId: string, now = Date.now()): Promise<Manifest> {
+  /**
+   * For the TV's own fetch: the recently built manifest when nothing changed since, else a new one,
+   * with download addresses under `base` (see downloadBase).
+   */
+  async forDevice(screenId: string, base: string = downloadBase(), now = Date.now()): Promise<Manifest> {
     const hit = this.cache.get(screenId);
-    if (hit && now < hit.until) return hit.manifest;
-    return this.build(screenId);
+    if (hit && now < hit.until) return withBase(hit.manifest, base);
+    return withBase(await this.build(screenId), base);
   }
 
   /**
-   * What this TV should play. It lists every playlist that may play (timed ones first, with their
+   * What this TV should play, with download paths relative to the server (forDevice adds the address). It lists every playlist that may play (timed ones first, with their
    * time slots) so the TV can switch at the right moment on its own, even when offline.
    * Only processed (READY) files with a checksum are listed, and ads that have already ended are
    * left out. Upcoming ads are included with validFrom so the TV can download them early.
@@ -100,7 +125,7 @@ export class ManifestService implements OnModuleDestroy {
         if (media.has(i.media.id)) continue;
         media.set(i.media.id, {
           mediaId: i.media.id,
-          url: `${publicBase()}/api/devices/media/${i.media.id}`,
+          url: `/api/devices/media/${i.media.id}`,
           sha256: i.media.sha256!,
           size: Number(i.media.sizeBytes ?? 0),
           type: i.media.type,
@@ -124,7 +149,7 @@ export class ManifestService implements OnModuleDestroy {
     const fallbackItem: ManifestItem | null = fallback
       ? (media.get(fallback.id) ?? {
           mediaId: fallback.id,
-          url: `${publicBase()}/api/devices/media/${fallback.id}`,
+          url: `/api/devices/media/${fallback.id}`,
           sha256: fallback.sha256!,
           size: Number(fallback.sizeBytes ?? 0),
           type: fallback.type,
@@ -156,7 +181,7 @@ export class ManifestService implements OnModuleDestroy {
     return {
       versionCode: r.versionCode,
       versionName: r.versionName,
-      url: `${publicBase()}/api/devices/app/${r.id}`,
+      url: `/api/devices/app/${r.id}`,
       sha256: r.sha256,
       size: Number(r.sizeBytes),
       installNow: r.installNow,
@@ -173,7 +198,7 @@ function toManifestBroadcast(b: BroadcastRow | null): ManifestBroadcast | null {
     b.kind === 'MEDIA' && m && m.status === 'READY' && m.storageKey && m.sha256
       ? {
           mediaId: m.id,
-          url: `${publicBase()}/api/devices/media/${m.id}`,
+          url: `/api/devices/media/${m.id}`,
           sha256: m.sha256,
           size: Number(m.sizeBytes ?? 0),
           type: m.type,

@@ -10,7 +10,7 @@ import { mediaTmpDir } from '../media/media.constants';
 import { MediaService } from '../media/media.service';
 import { CommandsService } from './commands.service';
 import { DeviceGuard } from './device-auth';
-import { ManifestService } from './manifest.service';
+import { downloadBase, ManifestService } from './manifest.service';
 import { RegisterDeviceDto } from './screen.dto';
 import { ScreensService } from './screens.service';
 
@@ -41,7 +41,7 @@ export class DevicesController {
   @UseGuards(DeviceGuard)
   manifest(@Req() req: Request): Promise<Manifest> {
     if (req.screen!.status === 'PENDING') throw new ForbiddenException('Screen is not paired yet');
-    return this.manifests.forDevice(req.screen!.id);
+    return this.manifests.forDevice(req.screen!.id, downloadBase(req.get('host'), req.protocol));
   }
 
   /** Media download for TVs. sendFile supports Range, so interrupted downloads can resume. */

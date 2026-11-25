@@ -100,9 +100,9 @@ describe('pushing a change to 101 TVs', () => {
     const tv = tvs[1];
     await svc.build(tv.id); // kept from now (its manifest from the push above may be seconds old)
     const before = builds;
-    await svc.forDevice(tv.id, Date.now() + 29_000);
+    await svc.forDevice(tv.id, undefined, Date.now() + 29_000);
     assert.equal(builds, before);
-    await svc.forDevice(tv.id, Date.now() + 31_000);
+    await svc.forDevice(tv.id, undefined, Date.now() + 31_000);
     assert.equal(builds, before + 1);
   });
 });
